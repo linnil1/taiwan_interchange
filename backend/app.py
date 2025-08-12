@@ -11,7 +11,6 @@ CORS(app)
 def get_interchanges() -> Response:
     """Get interchanges data"""
     interchanges = load_interchanges()
-    print(dir(interchanges[0]))
     return jsonify([i.model_dump() for i in interchanges])
 
 
