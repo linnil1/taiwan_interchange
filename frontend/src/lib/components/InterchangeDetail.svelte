@@ -72,7 +72,7 @@
 								? 'text-blue-700'
 								: ''} flex items-center"
 						>
-							{ramp.name}
+							Ramp {ramp.id}
 							<span class="ml-2 text-xs text-gray-400">
 								{selectedRampIndex === i ? '👁️' : ''}
 							</span>
@@ -83,7 +83,7 @@
 					</div>
 					<div class="text-sm text-gray-600 mb-2">
 						<strong>To:</strong>
-						{ramp.to}
+						{ramp.to.length > 0 ? ramp.to.join(', ') : 'Unknown'}
 					</div>
 
 					<!-- Paths within ramp -->

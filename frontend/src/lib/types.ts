@@ -22,10 +22,10 @@ export interface Path {
 }
 
 export interface Ramp {
-	/** Name of the ramp */
-	name: string;
+	/** Unique identifier for the ramp */
+	id: number;
 	/** Destination(s) that this ramp leads to */
-	to: string;
+	to: string[];
 	/** Array of connected paths that form this ramp */
 	paths: Path[];
 }
@@ -78,8 +78,8 @@ export function isPath(obj: any): obj is Path {
 export function isRamp(obj: any): obj is Ramp {
 	return (
 		typeof obj === 'object' &&
-		typeof obj.name === 'string' &&
-		typeof obj.to === 'string' &&
+		typeof obj.id === 'number' &&
+		Array.isArray(obj.to) &&
 		Array.isArray(obj.paths) &&
 		obj.paths.every(isPath)
 	);

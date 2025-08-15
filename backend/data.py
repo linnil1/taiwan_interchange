@@ -1,12 +1,14 @@
 import json
 import os
 from collections import defaultdict
+from pprint import pprint
 
 import numpy as np
-import requests
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
+
+from osm import Coordinate, OverPassNode, OverPassWay, load_overpass
 
 
 class Node(BaseModel):
@@ -31,8 +33,8 @@ class Path(BaseModel):
 class Ramp(BaseModel):
     """Represents a motorway ramp with its paths"""
 
-    name: str
-    to: str
+    id: int
+    to: list[str]
     paths: list[Path]
 
 
@@ -52,97 +54,6 @@ class Interchange(BaseModel):
     name: str
     bounds: Bounds
     ramps: list[Ramp]
-
-
-class Coordinate(BaseModel):
-    """Represents a geographical coordinate"""
-
-    lat: float
-    lng: float = Field(alias="lon")  # Map API's "lon" to our "lng"
-
-    class Config:
-        populate_by_name = True  # Allow both "lon" and "lng" field names
-
-
-class OverPassNode(BaseModel):
-    """Represents a raw OverPass API node"""
-
-    type: str
-    id: int
-    lat: float
-    lon: float
-    tags: dict[str, str] = {}
-
-
-class OverPassWay(BaseModel):
-    """Represents a raw OverPass API way"""
-
-    type: str
-    id: int
-    tags: dict[str, str] = {}
-    geometry: list[Coordinate]
-    nodes: list[int]
-
-
-class OverPassResponse(BaseModel):
-    """Represents a complete OverPass API response"""
-
-    version: float
-    generator: str
-    osm3s: dict[str, str]
-    elements: list[OverPassNode | OverPassWay]
-
-
-def query_overpass_api() -> dict | None:
-    """Query Overpass API for motorway links in Tainan"""
-    overpass_url = "http://overpass-api.de/api/interpreter"
-
-    query = """
-    [out:json][timeout:60];
-    area["name:en"="Tainan"]->.taiwan;
-    (
-      way["highway"="motorway_link"](area.taiwan);
-      node["highway"="motorway_junction"](area.taiwan);
-    );
-    out geom;
-    """
-
-    response = requests.post(overpass_url, data={"data": query})
-    response.raise_for_status()
-    return response.json()
-
-
-def save_overpass_cache(data: dict) -> bool:
-    """Save Overpass API response to cache file"""
-    cache_file_path = os.path.join(os.path.dirname(__file__), "overpass_cache.json")
-    with open(cache_file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"Saved Overpass data to cache: {cache_file_path}")
-    return True
-
-
-def load_overpass_cache() -> dict | None:
-    """Load Overpass API response from cache file"""
-    cache_file_path = os.path.join(os.path.dirname(__file__), "overpass_cache.json")
-    if not os.path.exists(cache_file_path):
-        print("No cache file found, will query Overpass API")
-        return None
-
-    with open(cache_file_path, encoding="utf-8") as f:
-        data = json.load(f)
-    print(f"Loaded Overpass data from cache: {cache_file_path}")
-    return data
-
-
-def get_overpass_data(use_cache: bool = True) -> OverPassResponse:
-    """Get Overpass data from cache or API"""
-    if use_cache:
-        data = load_overpass_cache()
-    else:
-        print("Querying Overpass API...")
-        data = query_overpass_api()
-        save_overpass_cache(data)
-    return OverPassResponse.model_validate(data)
 
 
 def calculate_bounds(ramps: list[Ramp]) -> Bounds | None:
@@ -166,6 +77,25 @@ def calculate_bounds(ramps: list[Ramp]) -> Bounds | None:
     return Bounds(min_lat=min(lats), max_lat=max(lats), min_lng=min(lons), max_lng=max(lons))
 
 
+def extract_to_destination(tags: dict[str, str]) -> list[str]:
+    """Extract destination from way tags - retrieve all three tags"""
+    destinations = []
+
+    # Check for 'exit_to' tag
+    if "exit_to" in tags and tags["exit_to"]:
+        destinations.extend(tags["exit_to"].split(";"))
+
+    # Check for 'destination' tag
+    if "destination" in tags and tags["destination"]:
+        destinations.extend(tags["destination"].split(";"))
+
+    # Check for 'ref' tag
+    if "ref" in tags and tags["ref"]:
+        destinations.append(tags["ref"])
+
+    return destinations
+
+
 def calculate_center(coordinates: list[tuple[float, float]]) -> Coordinate | None:
     """Calculate the center point of a list of coordinates"""
     if not coordinates:
@@ -176,30 +106,6 @@ def calculate_center(coordinates: list[tuple[float, float]]) -> Coordinate | Non
     count = len(coordinates)
 
     return Coordinate(lat=lat_sum / count, lng=lon_sum / count)
-
-
-def extract_to_destination(tags: dict[str, str]) -> str:
-    """Extract destination from way tags"""
-    # Try different tag patterns for destination
-    destinations = []
-
-    # Check for 'destination' tag
-    if "destination" in tags:
-        destinations.append(tags["destination"])
-
-    # Check for 'destination:ref' tag
-    if "destination:ref" in tags:
-        destinations.append(tags["destination:ref"])
-
-    # Check for 'ref' tag
-    if "ref" in tags:
-        destinations.append(tags["ref"])
-
-    # Check for 'name' tag
-    if "name" in tags:
-        destinations.append(tags["name"])
-
-    return "; ".join(destinations) if destinations else "Unknown"
 
 
 def process_single_path(overpass_way: OverPassWay) -> Path:
@@ -338,71 +244,57 @@ def connect_paths(paths: list[Path]) -> list[Ramp]:
         return extend_backward(path_by_subpath_id[prev_subpath_id]) + [current_path]
 
     connected_ramps = []
+    ramp_id = 0
     for start_path in paths:
         if start_path.get_subpath_id() in used_subpath_ids:
             continue
 
         connected_paths = extend_backward(start_path)[:-1] + extend_forward(start_path)
-        ramp = Ramp(
-            name=f"Ramp {connected_paths[0].get_subpath_id()}", to="Unknown", paths=connected_paths
-        )
+        ramp = Ramp(id=ramp_id, to=[], paths=connected_paths)
         connected_ramps.append(ramp)
+        ramp_id += 1
     return connected_ramps
 
 
-def annotate_ramps(
-    ramps: list[Ramp], overpass_nodes: list[OverPassNode], overpass_ways: list[OverPassWay]
-) -> list[Ramp]:
-    """Annotate ramps with proper names and destinations from OSM data"""
-    # Create mappings for quick lookup
-    way_tags = {}
-    for way in overpass_ways:
-        way_tags[way.id] = way.tags or {}
+def annotate_ramps(ramp: Ramp, way_dict: dict[int, OverPassWay]) -> Ramp:
+    """Annotate single ramp with destinations from OSM way dictionary"""
+    # Extract destinations from all paths in the ramp
+    all_destinations = []
 
-    node_tags = {}
-    for node in overpass_nodes:
-        node_tags[node.id] = node.tags or {}
+    for path in ramp.paths:
+        way = way_dict.get(path.id)
+        if way and way.tags:
+            dest_list = extract_to_destination(way.tags)
+            all_destinations.extend(dest_list)
 
-    annotated_ramps = []
-
-    for ramp in ramps:
-        # Extract info from all paths in the ramp to determine name and destination
-        all_names = []
-        all_destinations = []
-
-        for path in ramp.paths:
-            tags = way_tags.get(path.id, {})
-            if "name" in tags and tags["name"]:
-                all_names.append(tags["name"])
-            dest = extract_to_destination(tags)
-            if dest != "Unknown":
-                all_destinations.append(dest)
-
-        # Determine best name and destination
-        if all_destinations:
-            ramp_to = "; ".join(set(all_destinations))
-        else:
-            ramp_to = "Unknown"
-
-        if all_names:
-            ramp_name = "; ".join(set(all_names))
-        else:
-            ramp_name = f"Ramp {ramp.paths[0].id}" if ramp.paths else "Unnamed Ramp"
-
-        # Create annotated ramp
-        annotated_ramp = Ramp(name=ramp_name, to=ramp_to, paths=ramp.paths)
-        annotated_ramps.append(annotated_ramp)
-
-    return annotated_ramps
+    # Create annotated ramp with id and destination list
+    annotated_ramp = Ramp(id=ramp.id, to=list(set(all_destinations)), paths=ramp.paths)
+    return annotated_ramp
 
 
-def process_ramps_from_ways(ways: list[OverPassWay], nodes: list[OverPassNode]) -> list[Ramp]:
-    """Process OSM ways into connected ramp objects"""
-    paths = [process_single_path(way) for way in ways]
+def group_paths_to_ramps(paths: list[Path]) -> list[Ramp]:
+    """Group paths into connected ramp objects"""
     broken_paths = break_paths_at_connections(paths)
     connected_ramps = connect_paths(broken_paths)
-    annotated_ramps = annotate_ramps(connected_ramps, nodes, ways)
-    return annotated_ramps
+    return connected_ramps
+
+
+def extract_name_from_interchange(ramps: list[Ramp], node_dict: dict[int, OverPassNode]) -> str:
+    """Extract interchange name from motorway_junction nodes with names in tags"""
+    junction_names = []
+
+    for ramp in ramps:
+        for path in ramp.paths:
+            for node in path.nodes:
+                osm_node = node_dict.get(node.id)
+                if osm_node and osm_node.tags:
+                    if (
+                        osm_node.tags.get("highway") == "motorway_junction"
+                        and "name" in osm_node.tags
+                    ):
+                        junction_names.append(osm_node.tags["name"])
+
+    return ";".join(set(junction_names)) if junction_names else ""
 
 
 def group_ramps_by_interchange(ramps: list[Ramp]) -> list[Interchange]:
@@ -457,90 +349,100 @@ def group_ramps_by_interchange(ramps: list[Ramp]) -> list[Interchange]:
     for cluster_id, cluster_ramps in clusters.items():
         if len(cluster_ramps) < 1:
             continue
-
-        # Calculate bounds from all ramp nodes
-        bounds = calculate_bounds(cluster_ramps)
-        if not bounds:
-            continue
-
-        # Generate interchange name based on destinations
-        destinations = set()
-        for ramp in cluster_ramps:
-            if ramp.to and ramp.to != "Unknown":
-                destinations.update(ramp.to.split("; "))
-
-        if destinations:
-            # Take the first few unique destinations
-            dest_list = list(destinations)[:2]
-            interchange_name = f"Interchange to {', '.join(dest_list)}"
-        else:
-            interchange_name = f"Interchange {cluster_id + 1}"
-
-        interchange = Interchange(
-            id=cluster_id + 1,
-            name=interchange_name,
-            bounds=bounds,
-            ramps=cluster_ramps,
-        )
-
+        interchange = create_interchange_from_ramps(cluster_ramps, cluster_id)
         interchanges.append(interchange)
 
     return interchanges
 
 
+def create_interchange_from_ramps(ramps: list[Ramp], cluster_id: int) -> Interchange:
+    # Calculate bounds from all ramp nodes
+    bounds = calculate_bounds(ramps)
+    if not bounds:
+        raise ValueError("No valid bounds could be calculated for the interchange")
+
+    # Generate interchange name based on destinations (simplified)
+    destinations = set()
+    for ramp in ramps:
+        if ramp.to:
+            destinations.update(ramp.to)
+
+    if destinations:
+        # Take the first few unique destinations
+        interchange_name = f"Interchange to {','.join(destinations)}"
+    else:
+        interchange_name = f"Interchange {cluster_id + 1}"
+
+    return Interchange(id=cluster_id + 1, name=interchange_name, bounds=bounds, ramps=ramps)
+
+
+def annotate_interchange(
+    interchange: Interchange, node_dict: dict[int, OverPassNode]
+) -> Interchange:
+    """Annotate single interchange with proper name based on motorway_junction nodes"""
+    # Extract proper name from motorway_junction nodes
+    junction_name = extract_name_from_interchange(interchange.ramps, node_dict)
+
+    if junction_name:
+        # Use the junction name
+        annotated_interchange = Interchange(
+            id=interchange.id,
+            name=junction_name,
+            bounds=interchange.bounds,
+            ramps=interchange.ramps,
+        )
+    else:
+        # Keep the original name if no junction name found
+        annotated_interchange = interchange
+
+    return annotated_interchange
+
+
 def generate_interchanges_json(use_cache: bool = True) -> bool:
     """Generate interchanges.json file from Overpass API data"""
     print("Getting Overpass data...")
+    response = load_overpass(use_cache)
 
-    response = get_overpass_data(use_cache)
-
-    ways = [
-        element
-        for element in response.elements
-        if element.type == "way" and hasattr(element, "geometry")
-    ]
+    ways = [element for element in response.elements if element.type == "way"]
     nodes = [element for element in response.elements if element.type == "node"]
-
     print(f"Found {len(ways)} motorway links and {len(nodes)} motorway junctions")
 
     if not ways:
         print("No motorway links found in Tainan")
         return False
 
-    print("Processing ramps...")
-    ramps = process_ramps_from_ways(ways, nodes)
-    print(f"Processed {len(ramps)} ramps")
+    print("Processing paths and ramps...")
 
-    interchanges = group_ramps_by_interchange(ramps)
+    # Create dictionaries for efficient lookup
+    way_dict = {way.id: way for way in ways}
+    node_dict = {node.id: node for node in nodes}
 
+    # Process individual paths from ways
+    paths = [process_single_path(way) for way in ways]
+    print(f"Processed {len(paths)} paths")
+
+    # Group paths into ramps
+    ramps = group_paths_to_ramps(paths)
+    print(f"Grouped into {len(ramps)} ramps")
+
+    # Annotate ramps with destinations
+    annotated_ramps = [annotate_ramps(ramp, way_dict) for ramp in ramps]
+    print(f"Annotated {len(annotated_ramps)} ramps")
+
+    interchanges = group_ramps_by_interchange(annotated_ramps)
     print(f"Identified {len(interchanges)} interchanges")
 
-    # Save to JSON file
-    json_file_path = os.path.join(os.path.dirname(__file__), "interchanges.json")
+    # Annotate interchanges with proper names
+    annotated_interchanges = [
+        annotate_interchange(interchange, node_dict) for interchange in interchanges
+    ]
+    print(f"Annotated {len(annotated_interchanges)} interchanges")
 
-    # Convert dataclasses to dictionaries for JSON serialization
-    interchanges_dict = [interchange.model_dump() for interchange in interchanges]
-
-    with open(json_file_path, "w", encoding="utf-8") as f:
-        json.dump(interchanges_dict, f, indent=2, ensure_ascii=False)
-
-    print(f"Successfully generated {json_file_path}")
-    print(f"Generated {len(interchanges)} interchanges")
+    json_file_path = save_interchanges(annotated_interchanges)
+    print(f"Successfully saved interchanges to {json_file_path}")
 
     # Print first few interchanges as sample
-    for i, interchange in enumerate(interchanges[:3]):
-        print(f"\nSample interchange {i + 1}:")
-        print(f"  Name: {interchange.name}")
-        print(
-            f"  Bounds: ({interchange.bounds.min_lat:.6f}, {interchange.bounds.min_lng:.6f}) to ({interchange.bounds.max_lat:.6f}, {interchange.bounds.max_lng:.6f})"
-        )
-        print(f"  Ramps: {len(interchange.ramps)}")
-
-        for j, ramp in enumerate(interchange.ramps[:2]):  # Show first 2 ramps
-            print(f"    Ramp {j + 1}: {ramp.name} → {ramp.to}")
-            print(f"      Paths: {len(ramp.paths)}")
-            for k, path in enumerate(ramp.paths):
-                print(f"        Path {k + 1} (way {path.id}): {len(path.nodes)} nodes")
+    pprint(annotated_interchanges[:3])
 
     return True
 
@@ -551,6 +453,15 @@ def load_interchanges() -> list[Interchange]:
     data = json.load(open(json_file_path, encoding="utf-8"))
     datas = [Interchange.model_validate(item) for item in data]
     return datas
+
+
+def save_interchanges(interchanges: list[Interchange]) -> str:
+    """Save interchanges data to JSON file"""
+    json_file_path = os.path.join(os.path.dirname(__file__), "interchanges.json")
+    interchanges_dict = [interchange.model_dump() for interchange in interchanges]
+    with open(json_file_path, "w", encoding="utf-8") as f:
+        json.dump(interchanges_dict, f, indent=2, ensure_ascii=False)
+    return json_file_path
 
 
 if __name__ == "__main__":
