@@ -1,13 +1,12 @@
 import json
 import os
 from collections import defaultdict
-from pprint import pprint
 
 import numpy as np
 from pydantic import BaseModel
 from sklearn.cluster import AgglomerativeClustering
 
-from osm import Coordinate, OverPassNode, OverPassWay, load_overpass
+from osm import Coordinate, OverPassNode, OverPassWay, load_freeway_routes, load_overpass
 
 
 class Node(BaseModel):
@@ -38,6 +37,20 @@ class Ramp(BaseModel):
     to_ramps: list[int] = []  # IDs of ramps that this ramp connects to
     paths: list[Path]
 
+    def list_nodes(self) -> list[Node]:
+        """Get all nodes from all paths in this ramp"""
+        nodes = []
+        for path in self.paths:
+            nodes.extend(path.nodes)
+        return nodes
+
+    def get_endpoint_nodes(self) -> tuple[Node, Node]:
+        """Get all endpoint node IDs from this ramp's paths"""
+        assert self.paths, self
+        assert self.paths[0].nodes
+        assert self.paths[-1].nodes
+        return (self.paths[0].nodes[0], self.paths[-1].nodes[-1])
+
 
 class Bounds(BaseModel):
     """Represents geographical bounds"""
@@ -56,24 +69,29 @@ class Interchange(BaseModel):
     bounds: Bounds
     ramps: list[Ramp]
 
+    def list_nodes(self) -> list[Node]:
+        """Get all nodes from all ramps in this interchange"""
+        nodes = []
+        for ramp in self.ramps:
+            nodes.extend(ramp.list_nodes())
+        return nodes
+
 
 def calculate_bounds(ramps: list[Ramp]) -> Bounds | None:
     """Calculate min/max lat/lng from list of ramps"""
     if not ramps:
         return None
 
-    # Extract all coordinates from all ramps' paths
-    all_coordinates = []
+    # Extract all coordinates from all ramps using the new method
+    lats = []
+    lons = []
     for ramp in ramps:
-        for path in ramp.paths:
-            for node in path.nodes:
-                all_coordinates.append((node.lng, node.lat))
+        nodes = ramp.list_nodes()
+        lats.extend(node.lat for node in nodes)
+        lons.extend(node.lng for node in nodes)
 
-    if not all_coordinates:
+    if not lats:
         return None
-
-    lats = [coord[1] for coord in all_coordinates]
-    lons = [coord[0] for coord in all_coordinates]
 
     return Bounds(min_lat=min(lats), max_lat=max(lats), min_lng=min(lons), max_lng=max(lons))
 
@@ -336,16 +354,10 @@ def get_connected_ramps(ramps: list[Ramp]) -> list[list[Ramp]]:
     endpoint_to_ramps = defaultdict(list)
 
     for ramp in ramps:
-        # Get all endpoint nodes from the ramp's paths
-        endpoint_nodes = set()
-        for path in ramp.paths:
-            if path.nodes:
-                endpoint_nodes.add(path.nodes[0].id)  # First node
-                endpoint_nodes.add(path.nodes[-1].id)  # Last node
-
-        # Add this ramp to all its endpoint nodes
-        for node_id in endpoint_nodes:
-            endpoint_to_ramps[node_id].append(ramp)
+        # Get all endpoint nodes from the ramp using the new method
+        start_node, end_node = ramp.get_endpoint_nodes()
+        endpoint_to_ramps[start_node.id].append(ramp)
+        endpoint_to_ramps[end_node.id].append(ramp)
 
     # Find connected ramps using DFS
     visited = set()
@@ -358,16 +370,12 @@ def get_connected_ramps(ramps: list[Ramp]) -> list[list[Ramp]]:
         visited.add(ramp.id)
         current_group.append(ramp)
 
-        # Find all ramps connected to this one
-        ramp_endpoints = set()
-        for path in ramp.paths:
-            if path.nodes:
-                ramp_endpoints.add(path.nodes[0].id)
-                ramp_endpoints.add(path.nodes[-1].id)
+        # Find all ramps connected to this one using the new method
+        ramp_endpoints = ramp.get_endpoint_nodes()
 
         # Visit all connected ramps
-        for node_id in ramp_endpoints:
-            for connected_ramp in endpoint_to_ramps[node_id]:
+        for node in ramp_endpoints:
+            for connected_ramp in endpoint_to_ramps[node.id]:
                 if connected_ramp.id != ramp.id:
                     dfs(connected_ramp, current_group)
 
@@ -382,7 +390,9 @@ def get_connected_ramps(ramps: list[Ramp]) -> list[list[Ramp]]:
     return connected_groups
 
 
-def group_ramps_by_interchange(ramps: list[Ramp]) -> list[Interchange]:
+def group_ramps_by_interchange(
+    ramps: list[Ramp], distance_threshold: float = 0.005
+) -> list[Interchange]:
     """Group ramps by interchange using minimum distance clustering with all nodes"""
     if not ramps:
         return []
@@ -393,19 +403,15 @@ def group_ramps_by_interchange(ramps: list[Ramp]) -> list[Interchange]:
     cramps = get_connected_ramps(ramps)
     node_to_cramps = []
 
-    for key, ramps in enumerate(cramps):
-        for ramp in ramps:
-            for path in ramp.paths:
-                for node in path.nodes:
-                    node_coord = [node.lng, node.lat]
-                    all_nodes.append(node_coord)
-                    node_to_cramps.append(key)
+    for key, ramps_group in enumerate(cramps):
+        for ramp in ramps_group:
+            for node in ramp.list_nodes():
+                node_coord = [node.lng, node.lat]
+                all_nodes.append(node_coord)
+                node_to_cramps.append(key)
 
     if len(all_nodes) < 2:
         return [create_interchange_from_ramps(ramps, 1)]
-
-    # Distance threshold (in degrees, roughly 1km = 0.01 degrees)
-    distance_threshold = 0.005
 
     # Use agglomerative clustering with distance threshold
     clustering = AgglomerativeClustering(
@@ -442,6 +448,58 @@ def group_ramps_by_interchange(ramps: list[Ramp]) -> list[Interchange]:
             interchange = create_interchange_from_ramps(cluster_ramps, len(interchanges) + 1)
             interchanges.append(interchange)
     return interchanges
+
+
+def tune_interchange(interchanges: list[Interchange]) -> list[Interchange]:
+    """
+    Manual tuning of interchanges after initial clustering.
+    Apply specific rules for known interchange groupings.
+    """
+    # Find interchanges that should be regrouped
+    special_nodes = set(
+        [
+            1549192482,  # 新化端
+        ]
+    )
+
+    # Separate interchanges that match special criteria
+    special_interchanges = []
+    regular_interchanges = []
+
+    for interchange in interchanges:
+        # Check if the interchange name contains any of the special names
+        is_special = (
+            len(special_nodes.intersection([node.id for node in interchange.list_nodes()])) > 0
+        )
+
+        if is_special:
+            special_interchanges.append(interchange)
+        else:
+            regular_interchanges.append(interchange)
+
+    # If we found special interchanges, regroup them with stricter parameters
+    if len(special_interchanges) >= 1:
+        print(f"Found {len(special_interchanges)} special interchanges to regroup")
+
+        # Extract all ramps from special interchanges
+        all_special_ramps = []
+        for interchange in special_interchanges:
+            all_special_ramps.extend(interchange.ramps)
+
+        # Regroup with stricter parameters
+        regrouped_interchanges = group_ramps_by_interchange(all_special_ramps, 0.001)
+
+        # Add regrouped interchanges to regular ones
+        regular_interchanges.extend(regrouped_interchanges)
+
+        # Reassign IDs to maintain uniqueness
+        for i, interchange in enumerate(regular_interchanges):
+            interchange.id = i + 1
+    else:
+        # No special interchanges found, return original list
+        regular_interchanges = interchanges
+
+    return regular_interchanges
 
 
 def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
@@ -518,9 +576,10 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     """Generate interchanges.json file from Overpass API data"""
     print("Getting Overpass data...")
     response = load_overpass(use_cache)
+    response_freeway = load_freeway_routes(use_cache)
 
-    ways = [element for element in response.elements if element.type == "way"]
-    nodes = [element for element in response.elements if element.type == "node"]
+    ways = response.list_ways()
+    nodes = response.list_nodes()
     print(f"Found {len(ways)} motorway links and {len(nodes)} motorway junctions")
 
     if not ways:
@@ -542,20 +601,24 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     print(f"Grouped into {len(ramps)} ramps")
 
     # Group ramps into interchanges
-    interchanges = group_ramps_by_interchange(ramps)
+    interchanges = group_ramps_by_interchange(ramps, 0.005)
     print(f"Identified {len(interchanges)} interchanges")
 
+    # Apply manual tuning for specific interchanges
+    interchanges = tune_interchange(interchanges)
+    print(f"After tuning: {len(interchanges)} interchanges")
+
     # Annotate interchanges with proper names and ramp destinations
-    annotated_interchanges = [
+    interchanges = [
         annotate_interchange(interchange, node_dict, way_dict) for interchange in interchanges
     ]
-    print(f"Annotated {len(annotated_interchanges)} interchanges")
+    print(f"Annotated {len(interchanges)} interchanges")
 
-    json_file_path = save_interchanges(annotated_interchanges)
+    json_file_path = save_interchanges(interchanges)
     print(f"Successfully saved interchanges to {json_file_path}")
 
     # Print first few interchanges as sample
-    pprint(annotated_interchanges[:3])
+    # pprint(interchanges[:3])
 
     return True
 

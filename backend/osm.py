@@ -43,6 +43,12 @@ class OverPassResponse(BaseModel):
     osm3s: dict[str, str]
     elements: list[OverPassNode | OverPassWay]
 
+    def list_ways(self) -> list[OverPassWay]:
+        return [element for element in self.elements if element.type == "way"]  # type: ignore
+
+    def list_nodes(self) -> list[OverPassNode]:
+        return [element for element in self.elements if element.type == "node"]  # type: ignore
+
 
 def query_overpass_api() -> dict | None:
     """Query Overpass API for motorway links in Tainan"""
