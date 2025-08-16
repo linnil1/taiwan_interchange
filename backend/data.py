@@ -33,7 +33,9 @@ class Ramp(BaseModel):
     """Represents a motorway ramp with its paths"""
 
     id: int
-    to: list[str]
+    destination: list[str]
+    from_ramps: list[int] = []  # IDs of ramps that connect to this ramp
+    to_ramps: list[int] = []  # IDs of ramps that this ramp connects to
     paths: list[Path]
 
 
@@ -249,7 +251,7 @@ def connect_paths(paths: list[Path]) -> list[Ramp]:
             continue
 
         connected_paths = extend_backward(start_path)[:-1] + extend_forward(start_path)
-        ramp = Ramp(id=ramp_id, to=[], paths=connected_paths)
+        ramp = Ramp(id=ramp_id, destination=[], from_ramps=[], to_ramps=[], paths=connected_paths)
         connected_ramps.append(ramp)
         ramp_id += 1
     return connected_ramps
@@ -267,15 +269,44 @@ def annotate_ramps(ramp: Ramp, way_dict: dict[int, OverPassWay]) -> Ramp:
             all_destinations.extend(dest_list)
 
     # Create annotated ramp with id and destination list
-    annotated_ramp = Ramp(id=ramp.id, to=list(set(all_destinations)), paths=ramp.paths)
+    annotated_ramp = Ramp(
+        id=ramp.id,
+        destination=list(set(all_destinations)),
+        from_ramps=ramp.from_ramps,
+        to_ramps=ramp.to_ramps,
+        paths=ramp.paths,
+    )
     return annotated_ramp
+
+
+def populate_ramp_connections(ramps: list[Ramp]) -> list[Ramp]:
+    """Populate from_ramps and to_ramps fields based on shared endpoint nodes"""
+    if not ramps:
+        return ramps
+
+    # Build a map of endpoint nodes to ramps
+    node_to_ramps_from = defaultdict(set)
+    node_to_ramps_to = defaultdict(set)
+
+    for ramp in ramps:
+        # Get all endpoint nodes from the ramp's paths
+        node_to_ramps_from[ramp.paths[0].nodes[0].id].add(ramp.id)
+        node_to_ramps_to[ramp.paths[-1].nodes[-1].id].add(ramp.id)
+
+    # For each ramp, find connected ramps
+    for ramp in ramps:
+        ramp.from_ramps = list(node_to_ramps_to[ramp.paths[0].nodes[0].id])
+        ramp.to_ramps = list(node_to_ramps_from[ramp.paths[-1].nodes[-1].id])
+    return ramps
 
 
 def group_paths_to_ramps(paths: list[Path]) -> list[Ramp]:
     """Group paths into connected ramp objects"""
     broken_paths = break_paths_at_connections(paths)
     connected_ramps = connect_paths(broken_paths)
-    return connected_ramps
+    # Populate connection information
+    connected_ramps_with_connections = populate_ramp_connections(connected_ramps)
+    return connected_ramps_with_connections
 
 
 def extract_name_from_interchange(ramps: list[Ramp], node_dict: dict[int, OverPassNode]) -> str:
@@ -296,27 +327,82 @@ def extract_name_from_interchange(ramps: list[Ramp], node_dict: dict[int, OverPa
     return ";".join(set(junction_names)) if junction_names else ""
 
 
+def get_connected_ramps(ramps: list[Ramp]) -> list[list[Ramp]]:
+    """Get groups of ramps that are connected by sharing endpoint nodes"""
+    if not ramps:
+        return []
+
+    # Build a map of endpoint nodes to ramps
+    endpoint_to_ramps = defaultdict(list)
+
+    for ramp in ramps:
+        # Get all endpoint nodes from the ramp's paths
+        endpoint_nodes = set()
+        for path in ramp.paths:
+            if path.nodes:
+                endpoint_nodes.add(path.nodes[0].id)  # First node
+                endpoint_nodes.add(path.nodes[-1].id)  # Last node
+
+        # Add this ramp to all its endpoint nodes
+        for node_id in endpoint_nodes:
+            endpoint_to_ramps[node_id].append(ramp)
+
+    # Find connected ramps using DFS
+    visited = set()
+    connected_groups = []
+
+    def dfs(ramp: Ramp, current_group: list[Ramp]):
+        if ramp.id in visited:
+            return
+
+        visited.add(ramp.id)
+        current_group.append(ramp)
+
+        # Find all ramps connected to this one
+        ramp_endpoints = set()
+        for path in ramp.paths:
+            if path.nodes:
+                ramp_endpoints.add(path.nodes[0].id)
+                ramp_endpoints.add(path.nodes[-1].id)
+
+        # Visit all connected ramps
+        for node_id in ramp_endpoints:
+            for connected_ramp in endpoint_to_ramps[node_id]:
+                if connected_ramp.id != ramp.id:
+                    dfs(connected_ramp, current_group)
+
+    # Find all connected groups
+    for ramp in ramps:
+        if ramp.id not in visited:
+            current_group = []
+            dfs(ramp, current_group)
+            if current_group:
+                connected_groups.append(current_group)
+
+    return connected_groups
+
+
 def group_ramps_by_interchange(ramps: list[Ramp]) -> list[Interchange]:
     """Group ramps by interchange using minimum distance clustering with all nodes"""
     if not ramps:
         return []
 
-    # Collect all nodes from all ramps with ramp association
+    # Collect all nodes from all ramps
     all_nodes = []
-    node_to_ramp = {}  # Maps node index to ramp index
+    # cramps = connected_ramps
+    cramps = get_connected_ramps(ramps)
+    node_to_cramps = []
 
-    for ramp_idx, ramp in enumerate(ramps):
-        for path in ramp.paths:
-            for node in path.nodes:
-                node_coord = [node.lng, node.lat]
-                all_nodes.append(node_coord)
-                node_to_ramp[len(all_nodes) - 1] = ramp_idx
+    for key, ramps in enumerate(cramps):
+        for ramp in ramps:
+            for path in ramp.paths:
+                for node in path.nodes:
+                    node_coord = [node.lng, node.lat]
+                    all_nodes.append(node_coord)
+                    node_to_cramps.append(key)
 
     if len(all_nodes) < 2:
-        return []
-
-    # Convert to numpy array
-    nodes_array = np.array(all_nodes)
+        return [create_interchange_from_ramps(ramps, 1)]
 
     # Distance threshold (in degrees, roughly 1km = 0.01 degrees)
     distance_threshold = 0.005
@@ -327,37 +413,34 @@ def group_ramps_by_interchange(ramps: list[Ramp]) -> list[Interchange]:
         distance_threshold=distance_threshold,
         linkage="single",  # minimum distance between groups
     )
-
+    nodes_array = np.array(all_nodes)
     node_labels = clustering.fit_predict(nodes_array)
 
     # Group ramps based on their nodes' cluster assignments
-    # A ramp belongs to a cluster if any of its nodes belong to that cluster
-    ramp_to_clusters = defaultdict(set)
+    cramp_to_clusters = defaultdict(list)
 
     for node_idx, cluster_label in enumerate(node_labels):
-        ramp_idx = node_to_ramp[node_idx]
-        ramp_to_clusters[ramp_idx].add(cluster_label)
+        id = node_to_cramps[node_idx]
+        cramp_to_clusters[id].append(cluster_label)
 
     # Assign each ramp to the cluster that contains most of its nodes
-    ramp_cluster_assignment = {}
-    for ramp_idx, clusters in ramp_to_clusters.items():
-        # For now, assign to the first cluster found
-        # This ensures all nodes from same ramp stay in same group
-        ramp_cluster_assignment[ramp_idx] = min(clusters)
-
-    # Group ramps by their assigned clusters
-    clusters = defaultdict(list)
-    for ramp_idx, cluster_label in ramp_cluster_assignment.items():
-        clusters[cluster_label].append(ramps[ramp_idx])
+    cramp_cluster_assignment = {}
+    for cramp_id, clusters in cramp_to_clusters.items():
+        if clusters:
+            # Use the most frequent cluster, or first one if tied
+            most_frequent_cluster = max(set(clusters), key=clusters.count)
+            cramp_cluster_assignment[cramp_id] = most_frequent_cluster
 
     # Create interchange objects
     interchanges = []
-    for cluster_id, cluster_ramps in clusters.items():
-        if not len(cluster_ramps):
-            continue
-        interchange = create_interchange_from_ramps(cluster_ramps, len(interchanges) + 1)
-        interchanges.append(interchange)
-
+    for cluster_label_target in set(cramp_cluster_assignment.values()):
+        cluster_ramps = []
+        for cramp_id, cluster_label in cramp_cluster_assignment.items():
+            if cluster_label == cluster_label_target:
+                cluster_ramps.extend(cramps[cramp_id])
+        if cluster_ramps:
+            interchange = create_interchange_from_ramps(cluster_ramps, len(interchanges) + 1)
+            interchanges.append(interchange)
     return interchanges
 
 
@@ -370,8 +453,8 @@ def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
     # Generate interchange name based on destinations (simplified)
     destinations = set()
     for ramp in ramps:
-        if ramp.to:
-            destinations.update(ramp.to)
+        if ramp.destination:
+            destinations.update(ramp.destination)
 
     if destinations:
         # Take the first few unique destinations
@@ -382,7 +465,7 @@ def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
     return Interchange(id=id, name=interchange_name, bounds=bounds, ramps=ramps)
 
 
-def annotate_interchange(
+def annotate_interchange_name(
     interchange: Interchange, node_dict: dict[int, OverPassNode]
 ) -> Interchange:
     """Annotate single interchange with proper name based on motorway_junction nodes"""
@@ -402,6 +485,33 @@ def annotate_interchange(
         annotated_interchange = interchange
 
     return annotated_interchange
+
+
+def annotate_interchange_ramps(
+    interchange: Interchange, way_dict: dict[int, OverPassWay]
+) -> Interchange:
+    """Annotate all ramps in an interchange with destinations"""
+    annotated_ramps = [annotate_ramps(ramp, way_dict) for ramp in interchange.ramps]
+
+    return Interchange(
+        id=interchange.id,
+        name=interchange.name,
+        bounds=interchange.bounds,
+        ramps=annotated_ramps,
+    )
+
+
+def annotate_interchange(
+    interchange: Interchange, node_dict: dict[int, OverPassNode], way_dict: dict[int, OverPassWay]
+) -> Interchange:
+    """Annotate single interchange with proper name and ramp destinations"""
+    # First annotate the interchange name
+    interchange_with_name = annotate_interchange_name(interchange, node_dict)
+
+    # Then annotate the ramps
+    fully_annotated = annotate_interchange_ramps(interchange_with_name, way_dict)
+
+    return fully_annotated
 
 
 def generate_interchanges_json(use_cache: bool = True) -> bool:
@@ -431,16 +541,13 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     ramps = group_paths_to_ramps(paths)
     print(f"Grouped into {len(ramps)} ramps")
 
-    # Annotate ramps with destinations
-    annotated_ramps = [annotate_ramps(ramp, way_dict) for ramp in ramps]
-    print(f"Annotated {len(annotated_ramps)} ramps")
-
-    interchanges = group_ramps_by_interchange(annotated_ramps)
+    # Group ramps into interchanges
+    interchanges = group_ramps_by_interchange(ramps)
     print(f"Identified {len(interchanges)} interchanges")
 
-    # Annotate interchanges with proper names
+    # Annotate interchanges with proper names and ramp destinations
     annotated_interchanges = [
-        annotate_interchange(interchange, node_dict) for interchange in interchanges
+        annotate_interchange(interchange, node_dict, way_dict) for interchange in interchanges
     ]
     print(f"Annotated {len(annotated_interchanges)} interchanges")
 

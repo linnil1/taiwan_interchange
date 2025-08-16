@@ -25,7 +25,11 @@ export interface Ramp {
 	/** Unique identifier for the ramp */
 	id: number;
 	/** Destination(s) that this ramp leads to */
-	to: string[];
+	destination: string[];
+	/** Source ramp IDs that connect to this ramp */
+	from_ramps: number[];
+	/** Target ramp IDs that this ramp connects to */
+	to_ramps: number[];
 	/** Array of connected paths that form this ramp */
 	paths: Path[];
 }
@@ -79,7 +83,9 @@ export function isRamp(obj: any): obj is Ramp {
 	return (
 		typeof obj === 'object' &&
 		typeof obj.id === 'number' &&
-		Array.isArray(obj.to) &&
+		Array.isArray(obj.destination) &&
+		Array.isArray(obj.from_ramps) &&
+		Array.isArray(obj.to_ramps) &&
 		Array.isArray(obj.paths) &&
 		obj.paths.every(isPath)
 	);

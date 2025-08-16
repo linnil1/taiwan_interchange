@@ -141,9 +141,8 @@
 
 					const rampPath = L.polyline(coordinates, {
 						color: rampColor,
-						weight: isSelectedRamp ? 6 : 4,
-						opacity: isSelectedRamp ? 1.0 : 0.8,
-						dashArray: isSelectedRamp ? '10, 5' : null
+						weight: isSelectedRamp ? 8 : 4,
+						opacity: isSelectedRamp ? 1.0 : 0.8
 					}).addTo(map);
 
 					// Handle polyline click to focus on ramp instead of showing popup

@@ -26,6 +26,26 @@
 	function selectRamp(rampIndex: number) {
 		selectedRampIndex = selectedRampIndex === rampIndex ? null : rampIndex;
 	}
+
+	function navigateToRamp(rampId: number) {
+		const rampIndex = interchange.ramps.findIndex((r) => r.id === rampId);
+		if (rampIndex !== -1) {
+			selectedRampIndex = rampIndex;
+		}
+	}
+
+	// Helper function to get ramp connections within this interchange
+	function getRampConnections(ramp: any) {
+		const fromRamps = ramp.from_ramps
+			.map((id: number) => interchange.ramps.find((r) => r.id === id))
+			.filter((r: any) => r !== undefined);
+
+		const toRamps = ramp.to_ramps
+			.map((id: number) => interchange.ramps.find((r) => r.id === id))
+			.filter((r: any) => r !== undefined);
+
+		return { fromRamps, toRamps };
+	}
 </script>
 
 <div class="w-96 bg-white border-r border-gray-300 overflow-y-auto">
@@ -81,9 +101,38 @@
 							>{ramp.paths.length} path{ramp.paths.length === 1 ? '' : 's'}</span
 						>
 					</div>
+					<!-- Ramp Navigation -->
+					{#if getRampConnections(ramp).fromRamps.length > 0 || getRampConnections(ramp).toRamps.length > 0}
+						{@const connections = getRampConnections(ramp)}
+						<div class="mb-2 text-xs flex flex-wrap gap-1 mt-1 items-center">
+							{#each connections.fromRamps as fromRamp}
+								<button
+									class="px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+									onclick={(e) => {
+										e.stopPropagation();
+										navigateToRamp(fromRamp.id);
+									}}
+								>
+									← Ramp {fromRamp.id}
+								</button>
+							{/each}
+							{#each connections.toRamps as toRamp}
+								<button
+									class="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+									onclick={(e) => {
+										e.stopPropagation();
+										navigateToRamp(toRamp.id);
+									}}
+								>
+									Ramp {toRamp.id} →
+								</button>
+							{/each}
+						</div>
+					{/if}
+
 					<div class="text-sm text-gray-600 mb-2">
 						<strong>To:</strong>
-						{ramp.to.length > 0 ? ramp.to.join(', ') : 'Unknown'}
+						{ramp.destination.length > 0 ? ramp.destination.join(', ') : 'Unknown'}
 					</div>
 
 					<!-- Paths within ramp -->
