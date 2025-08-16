@@ -6,7 +6,16 @@ import numpy as np
 from pydantic import BaseModel
 from sklearn.cluster import AgglomerativeClustering
 
-from osm import Coordinate, OverPassNode, OverPassWay, load_freeway_routes, load_overpass
+from osm import (
+    Coordinate,
+    OverPassNode,
+    OverPassResponse,
+    OverPassWay,
+    load_freeway_routes,
+    load_overpass,
+    load_provincial_routes,
+    load_unknown_end_nodes,
+)
 
 
 class Node(BaseModel):
@@ -23,6 +32,7 @@ class Path(BaseModel):
     id: int  # way_id
     part: int  # part number when a way is broken into multiple paths
     nodes: list[Node]
+    ended: bool = False  # True if this path ends at a traffic light or similar
 
     def get_subpath_id(self) -> str:
         return f"{self.id}_{self.part}"
@@ -59,6 +69,14 @@ class Bounds(BaseModel):
     max_lat: float
     min_lng: float
     max_lng: float
+
+
+class Relation(BaseModel):
+    """Represents a road relation with name, ref, and road type"""
+
+    name: str
+    ref: str
+    road_type: str  # "freeway", "provincial", or "unknown"
 
 
 class Interchange(BaseModel):
@@ -109,7 +127,7 @@ def extract_to_destination(tags: dict[str, str]) -> list[str]:
         destinations.extend(tags["destination"].split(";"))
 
     # Check for 'ref' tag
-    if "ref" in tags and tags["ref"]:
+    if "ref" in tags and tags["ref"] and not destinations:
         destinations.append(tags["ref"])
 
     return destinations
@@ -124,7 +142,20 @@ def calculate_center(coordinates: list[tuple[float, float]]) -> Coordinate | Non
     lon_sum = sum(coord[0] for coord in coordinates)
     count = len(coordinates)
 
-    return Coordinate(lat=lat_sum / count, lng=lon_sum / count)
+    return Coordinate(lat=lat_sum / count, lon=lon_sum / count)
+
+
+def is_node_traffic_light(node: OverPassNode | None) -> bool:
+    """Check if a node is a traffic light or similar control node"""
+    if node and node.tags:
+        # Check for traffic control tags
+        return (
+            node.tags.get("highway") == "traffic_signals"
+            or node.tags.get("traffic_signals") is not None
+            or node.tags.get("highway") == "stop"
+            or node.tags.get("stop") is not None
+        )
+    return False
 
 
 def process_single_path(overpass_way: OverPassWay) -> Path:
@@ -145,8 +176,8 @@ def process_single_path(overpass_way: OverPassWay) -> Path:
     return Path(id=way_id, part=0, nodes=nodes)
 
 
-def break_paths_at_connections(paths: list[Path]) -> list[Path]:
-    """Break paths when internal nodes connect to endpoints of other paths"""
+def break_paths_at_connections(paths: list[Path], node_dict: dict[int, OverPassNode]) -> list[Path]:
+    """Break paths when internal nodes connect to endpoints of other paths, and mark paths with traffic lights"""
     if not paths:
         return []
 
@@ -169,7 +200,7 @@ def break_paths_at_connections(paths: list[Path]) -> list[Path]:
         break_points = []
         for i, node in enumerate(path.nodes):
             if i > 0 and i < len(path.nodes) - 1:  # Internal node (not first or last)
-                if node.id in endpoint_nodes:
+                if node.id in endpoint_nodes or is_node_traffic_light(node_dict.get(node.id)):
                     break_points.append(i)
 
         if not break_points:
@@ -180,21 +211,20 @@ def break_paths_at_connections(paths: list[Path]) -> list[Path]:
             part_num = 0
             start_idx = 0
 
-            for break_idx in break_points:
+            for break_idx in [*break_points, len(path.nodes)]:
                 # Create a path segment from start_idx to break_idx (inclusive)
                 segment_nodes = path.nodes[start_idx : break_idx + 1]
-                if len(segment_nodes) >= 2:  # Only create if it has at least 2 nodes
-                    broken_path = Path(id=path.id, part=part_num, nodes=segment_nodes)
-                    broken_paths.append(broken_path)
-                    part_num += 1
+                assert len(segment_nodes) >= 2  # Only create if it has at least 2 nodes
 
-                start_idx = break_idx  # Start next segment from the break point
-
-            # Create the final segment
-            final_nodes = path.nodes[start_idx:]
-            if len(final_nodes) >= 2:
-                broken_path = Path(id=path.id, part=part_num, nodes=final_nodes)
+                broken_path = Path(
+                    id=path.id,
+                    part=part_num,
+                    nodes=segment_nodes,
+                    ended=is_node_traffic_light(node_dict.get(segment_nodes[-1].id)),
+                )
                 broken_paths.append(broken_path)
+                part_num += 1
+                start_idx = break_idx  # Start next segment from the break point
 
     return broken_paths
 
@@ -208,7 +238,7 @@ def connect_paths(paths: list[Path]) -> list[Ramp]:
     # Build connection graph: node_id -> list of (subpath_id, is_start)
     # is_start=True means the node is the start of the path, False means it's the end
     node_connections = defaultdict(list)
-    path_by_subpath_id = {}  # subpath_id -> Path object
+    path_by_subpath_id: dict[str, Path] = {}  # subpath_id -> Path object
 
     for path in paths:
         subpath_id = path.get_subpath_id()
@@ -243,7 +273,8 @@ def connect_paths(paths: list[Path]) -> list[Ramp]:
 
     def extend_forward(current_path: Path) -> list[Path]:
         used_subpath_ids.add(current_path.get_subpath_id())
-
+        if current_path.ended:
+            return [current_path]
         end_node_id = current_path.nodes[-1].id
         if not can_node_extend(end_node_id):
             return [current_path]
@@ -260,7 +291,10 @@ def connect_paths(paths: list[Path]) -> list[Ramp]:
         prev_subpath_id = get_next_path(start_node_id, find_start=False)
         if prev_subpath_id in used_subpath_ids:
             return [current_path]
-        return extend_backward(path_by_subpath_id[prev_subpath_id]) + [current_path]
+        prev_path = path_by_subpath_id[prev_subpath_id]
+        if prev_path.ended:
+            return [current_path]
+        return extend_backward(prev_path) + [current_path]
 
     connected_ramps = []
     ramp_id = 0
@@ -275,9 +309,8 @@ def connect_paths(paths: list[Path]) -> list[Ramp]:
     return connected_ramps
 
 
-def annotate_ramps(ramp: Ramp, way_dict: dict[int, OverPassWay]) -> Ramp:
-    """Annotate single ramp with destinations from OSM way dictionary"""
-    # Extract destinations from all paths in the ramp
+def annotate_ramp_by_way(ramp: Ramp, way_dict: dict[int, OverPassWay]) -> list[str]:
+    """Annotate ramp with destinations from OSM way dictionary"""
     all_destinations = []
 
     for path in ramp.paths:
@@ -286,15 +319,99 @@ def annotate_ramps(ramp: Ramp, way_dict: dict[int, OverPassWay]) -> Ramp:
             dest_list = extract_to_destination(way.tags)
             all_destinations.extend(dest_list)
 
+    return list(set(all_destinations))
+
+
+def annotate_ramp_by_relation(ramp: Ramp, node_to_relations: dict[int, Relation]) -> list[str]:
+    """Annotate ramp with destinations from relation mapping"""
+    all_destinations = []
+
+    # Use the end node to determine destination
+    _, end_node = ramp.get_endpoint_nodes()
+    relation = node_to_relations.get(end_node.id)
+    if relation:
+        all_destinations.append(relation.name)
+
+    return all_destinations
+
+
+def annotate_ramps_by_propagating(ramps: list[Ramp]) -> list[Ramp]:
+    """Propagate destination information upstream using reverse topological order"""
+    # Create a mapping from ramp ID to ramp for quick lookup
+    ramp_dict = {ramp.id: ramp for ramp in ramps}
+    visited_ramps = set()
+
+    def dfs(ramp: Ramp) -> None:
+        if ramp.id in visited_ramps:
+            return
+        visited_ramps.add(ramp.id)
+
+        # Propagate destinations to upstream ramps
+        for upstream_ramp_id in ramp.to_ramps:
+            downstream_ramp = ramp_dict.get(upstream_ramp_id)
+            assert downstream_ramp
+            dfs(downstream_ramp)
+
+            ramp.destination.extend(downstream_ramp.destination)
+        ramp.destination = list(set(ramp.destination))  # Remove duplicates
+
+    for ramp in ramps:
+        if ramp.id not in visited_ramps:
+            dfs(ramp)
+    return ramps
+
+
+def annotate_ramps_by_query_unknown(
+    ramps: list[Ramp], interchange_name: str, use_cache: bool = True
+) -> list[Ramp]:
+    """Annotate ramps by querying unknown end nodes for ramps with empty destinations"""
+    # Find ramps with empty destinations and collect their end node IDs
+    empty_destination_ramps = []
+    unknown_node_ids = []
+
+    for ramp in ramps:
+        if not ramp.destination:
+            empty_destination_ramps.append(ramp)
+            # Get the end node of connected ramps
+            if not ramp.to_ramps:
+                _, end_node = ramp.get_endpoint_nodes()
+                unknown_node_ids.append(end_node.id)
+
+    if not unknown_node_ids:
+        return ramps
+
+    # Query for unknown end nodes
+    response = load_unknown_end_nodes(unknown_node_ids, interchange_name, use_cache)
+
+    node_to_relation = process_relations_by_way(response, road_type="unknown")
+    for ramp in ramps:
+        destinations = annotate_ramp_by_relation(ramp, node_to_relation)
+        ramp.destination.extend(destinations)
+    return ramps
+
+
+def annotate_ramp(
+    ramp: Ramp,
+    way_dict: dict[int, OverPassWay],
+    node_to_relations: dict[int, Relation] | None = None,
+) -> Ramp:
+    """Annotate single ramp with destinations using multiple methods"""
+    all_destinations = []
+
+    # Try relation mapping first (highest priority)
+    if node_to_relations:
+        relation_destinations = annotate_ramp_by_relation(ramp, node_to_relations)
+        all_destinations.extend(relation_destinations)
+
+    # If no relation destinations, try way tags
+    # TODO: temporary disabled it
+    if not all_destinations:
+        way_destinations = annotate_ramp_by_way(ramp, way_dict)
+        all_destinations.extend(way_destinations)
+
     # Create annotated ramp with id and destination list
-    annotated_ramp = Ramp(
-        id=ramp.id,
-        destination=list(set(all_destinations)),
-        from_ramps=ramp.from_ramps,
-        to_ramps=ramp.to_ramps,
-        paths=ramp.paths,
-    )
-    return annotated_ramp
+    ramp.destination = list(set(all_destinations))
+    return ramp
 
 
 def populate_ramp_connections(ramps: list[Ramp]) -> list[Ramp]:
@@ -320,11 +437,10 @@ def populate_ramp_connections(ramps: list[Ramp]) -> list[Ramp]:
 
 def group_paths_to_ramps(paths: list[Path]) -> list[Ramp]:
     """Group paths into connected ramp objects"""
-    broken_paths = break_paths_at_connections(paths)
-    connected_ramps = connect_paths(broken_paths)
+    ramps = connect_paths(paths)
     # Populate connection information
-    connected_ramps_with_connections = populate_ramp_connections(connected_ramps)
-    return connected_ramps_with_connections
+    ramps = populate_ramp_connections(ramps)
+    return ramps
 
 
 def extract_name_from_interchange(ramps: list[Ramp], node_dict: dict[int, OverPassNode]) -> str:
@@ -546,38 +662,125 @@ def annotate_interchange_name(
 
 
 def annotate_interchange_ramps(
-    interchange: Interchange, way_dict: dict[int, OverPassWay]
+    interchange: Interchange,
+    way_dict: dict[int, OverPassWay],
+    node_to_relations: dict[int, Relation] | None = None,
+    use_cache: bool = True,
 ) -> Interchange:
     """Annotate all ramps in an interchange with destinations"""
-    annotated_ramps = [annotate_ramps(ramp, way_dict) for ramp in interchange.ramps]
+    # First annotate individual ramps
+    ramps = [annotate_ramp(ramp, way_dict, node_to_relations) for ramp in interchange.ramps]
+
+    # Then use query unknown for ramps with empty destinations
+    ramps = annotate_ramps_by_query_unknown(ramps, interchange.name, use_cache)
+
+    # Finally, propagate destinations upstream from exit ramps to entry ramps
+    ramps = annotate_ramps_by_propagating(ramps)
 
     return Interchange(
         id=interchange.id,
         name=interchange.name,
         bounds=interchange.bounds,
-        ramps=annotated_ramps,
+        ramps=ramps,
     )
 
 
 def annotate_interchange(
-    interchange: Interchange, node_dict: dict[int, OverPassNode], way_dict: dict[int, OverPassWay]
+    interchange: Interchange,
+    node_dict: dict[int, OverPassNode],
+    way_dict: dict[int, OverPassWay],
+    node_to_relations: dict[int, Relation],
+    use_cache: bool = True,
 ) -> Interchange:
     """Annotate single interchange with proper name and ramp destinations"""
     # First annotate the interchange name
-    interchange_with_name = annotate_interchange_name(interchange, node_dict)
+    interchange = annotate_interchange_name(interchange, node_dict)
 
     # Then annotate the ramps
-    fully_annotated = annotate_interchange_ramps(interchange_with_name, way_dict)
+    interchange = annotate_interchange_ramps(interchange, way_dict, node_to_relations, use_cache)
 
-    return fully_annotated
+    return interchange
+
+
+def process_relations_by_way(response: OverPassResponse, road_type: str) -> dict[int, Relation]:
+    ways = response.list_ways()
+    node_to_relation = {}
+
+    # Process ways
+    for way in ways:
+        if not way.tags.get("name"):
+            continue
+        relation = Relation(name=way.tags["name"], road_type=road_type, ref="")
+        for node_id in way.nodes:
+            if node_id in node_to_relation:
+                continue
+            node_to_relation[node_id] = relation
+    return node_to_relation
+
+
+def process_relations_mapping(response: OverPassResponse, road_type: str) -> dict[int, Relation]:
+    """Process relations and return node to relation mapping"""
+    node_to_relations = {}
+    relations = response.list_relations()
+    ways = response.list_ways()
+
+    print(f"Processing {road_type}: {len(relations)} relations, {len(ways)} ways")
+
+    # Create way_id to way mapping for efficiency
+    way_dict = {way.id: way for way in ways}
+
+    for relation in relations:
+        # Skip if no name in tags for relations
+        if not relation.tags or "name" not in relation.tags:
+            continue
+
+        relation_obj = Relation(
+            name=relation.tags["name"],
+            ref=relation.tags.get("ref", ""),
+            road_type=road_type,
+        )
+
+        # Get all way members from this relation
+        way_ids_in_relation = set()
+        for member in relation.members:
+            if member.get("type") == "way":
+                way_ids_in_relation.add(member.get("ref"))
+
+        # Map all nodes from these ways to this relation object
+        for way_id in way_ids_in_relation:
+            way = way_dict.get(way_id)
+            if way and hasattr(way, "nodes") and way.nodes:
+                for node_id in way.nodes:
+                    if node_id not in node_to_relations:
+                        node_to_relations[node_id] = relation_obj
+
+    return node_to_relations
+
+
+def build_node_to_relation_mapping(use_cache: bool = True) -> dict[int, Relation]:
+    """Build mapping from node ID to road relation objects (freeway, provincial)"""
+    # Load the responses
+    response_freeway = load_freeway_routes(use_cache)
+    response_provincial = load_provincial_routes(use_cache)
+
+    # Process each type and combine results with priority: freeway > provincial
+    node_to_relations = {}
+
+    # Process provincial first (lower priority)
+    provincial_mapping = process_relations_mapping(response_provincial, "provincial")
+    node_to_relations.update(provincial_mapping)
+
+    # Process freeway second (higher priority, will overwrite provincial)
+    freeway_mapping = process_relations_mapping(response_freeway, "freeway")
+    node_to_relations.update(freeway_mapping)
+
+    return node_to_relations
 
 
 def generate_interchanges_json(use_cache: bool = True) -> bool:
     """Generate interchanges.json file from Overpass API data"""
     print("Getting Overpass data...")
     response = load_overpass(use_cache)
-    response_freeway = load_freeway_routes(use_cache)
-
     ways = response.list_ways()
     nodes = response.list_nodes()
     print(f"Found {len(ways)} motorway links and {len(nodes)} motorway junctions")
@@ -585,6 +788,10 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     if not ways:
         print("No motorway links found in Tainan")
         return False
+
+    print("Building node to relation mapping...")
+    node_to_relations = build_node_to_relation_mapping(use_cache)
+    print(f"Mapped {len(node_to_relations)} nodes to road relations")
 
     print("Processing paths and ramps...")
 
@@ -597,6 +804,7 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     print(f"Processed {len(paths)} paths")
 
     # Group paths into ramps
+    paths = break_paths_at_connections(paths, node_dict)
     ramps = group_paths_to_ramps(paths)
     print(f"Grouped into {len(ramps)} ramps")
 
@@ -610,7 +818,8 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
 
     # Annotate interchanges with proper names and ramp destinations
     interchanges = [
-        annotate_interchange(interchange, node_dict, way_dict) for interchange in interchanges
+        annotate_interchange(interchange, node_dict, way_dict, node_to_relations, use_cache)
+        for interchange in interchanges
     ]
     print(f"Annotated {len(interchanges)} interchanges")
 
