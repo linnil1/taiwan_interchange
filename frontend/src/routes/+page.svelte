@@ -7,6 +7,7 @@
 	let selectedInterchange: Interchange | null = $state(null);
 	let selectedRampIndex: number | null = $state(null);
 	let searchTerm: string = $state('');
+	let mapComponent: any = $state(null);
 
 	// Fetch interchanges on mount
 	$effect(() => {
@@ -25,11 +26,18 @@
 	function selectInterchange(interchange: Interchange) {
 		selectedInterchange = interchange;
 		selectedRampIndex = null; // Reset ramp selection when changing interchange
+		// Update current index
 	}
 
 	function clearSelection() {
 		selectedInterchange = null;
 		selectedRampIndex = null;
+	}
+
+	function handleFitToRamp(rampIndex: number) {
+		if (mapComponent && mapComponent.fitToRamp) {
+			mapComponent.fitToRamp(rampIndex);
+		}
 	}
 </script>
 
@@ -83,12 +91,14 @@
 			interchange={selectedInterchange}
 			onClose={clearSelection}
 			bind:selectedRampIndex
+			onFitToRamp={handleFitToRamp}
 		/>
 	{/if}
 
 	<!-- Map Container -->
 	<div class="flex-1 relative">
 		<Map
+			bind:this={mapComponent}
 			bind:selectedInterchange
 			bind:selectedRampIndex
 			interchanges={filteredInterchanges}

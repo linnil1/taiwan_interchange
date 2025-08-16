@@ -4,11 +4,13 @@
 	let {
 		interchange,
 		onClose,
-		selectedRampIndex = $bindable(null)
+		selectedRampIndex = $bindable(null),
+		onFitToRamp
 	}: {
 		interchange: Interchange;
 		onClose: () => void;
 		selectedRampIndex?: number | null;
+		onFitToRamp?: (rampIndex: number) => void;
 	} = $props();
 
 	let rampElements: HTMLElement[] = [];
@@ -96,6 +98,18 @@
 							<span class="ml-2 text-xs text-gray-400">
 								{selectedRampIndex === i ? '👁️' : ''}
 							</span>
+							{#if selectedRampIndex === i && onFitToRamp}
+								<button
+									class="ml-2 text-blue-500 hover:text-blue-700 transition-colors"
+									onclick={(e) => {
+										e.stopPropagation();
+										onFitToRamp(i);
+									}}
+									title="Zoom to ramp"
+								>
+									🔍
+								</button>
+							{/if}
 						</span>
 						<span class="text-xs text-gray-500"
 							>{ramp.paths.length} path{ramp.paths.length === 1 ? '' : 's'}</span

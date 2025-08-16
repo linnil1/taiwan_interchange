@@ -187,6 +187,35 @@
 		];
 		return colors[index % colors.length];
 	}
+
+	function fitToRamp(rampIndex: number) {
+		if (
+			!map ||
+			!L ||
+			!selectedInterchange ||
+			rampIndex < 0 ||
+			rampIndex >= selectedInterchange.ramps.length
+		)
+			return;
+
+		const ramp = selectedInterchange.ramps[rampIndex];
+		const allCoordinates: [number, number][] = [];
+
+		// Collect all coordinates from all paths in the ramp
+		ramp.paths.forEach((path) => {
+			path.nodes.forEach((node) => {
+				allCoordinates.push([node.lat, node.lng]);
+			});
+		});
+
+		if (allCoordinates.length > 0) {
+			const bounds = L.latLngBounds(allCoordinates);
+			map.fitBounds(bounds, { padding: [30, 30] });
+		}
+	}
+
+	// Export the fitToRamp function so parent can access it
+	export { fitToRamp };
 </script>
 
 <div bind:this={mapContainer} class="w-full h-full relative"></div>
