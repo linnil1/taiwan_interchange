@@ -5,8 +5,7 @@ from pprint import pprint
 
 import numpy as np
 from pydantic import BaseModel
-from sklearn.cluster import DBSCAN
-from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import AgglomerativeClustering
 
 from osm import Coordinate, OverPassNode, OverPassWay, load_overpass
 
@@ -298,64 +297,71 @@ def extract_name_from_interchange(ramps: list[Ramp], node_dict: dict[int, OverPa
 
 
 def group_ramps_by_interchange(ramps: list[Ramp]) -> list[Interchange]:
-    """Group ramps by interchange using DBSCAN clustering algorithm"""
+    """Group ramps by interchange using minimum distance clustering with all nodes"""
     if not ramps:
         return []
 
-    # Calculate center points for each ramp
-    ramp_centers = []
-    valid_ramps = []
+    # Collect all nodes from all ramps with ramp association
+    all_nodes = []
+    node_to_ramp = {}  # Maps node index to ramp index
 
-    for ramp in ramps:
-        # Get coordinates from all paths in the ramp
-        ramp_coords = []
+    for ramp_idx, ramp in enumerate(ramps):
         for path in ramp.paths:
             for node in path.nodes:
-                ramp_coords.append((node.lng, node.lat))
+                node_coord = [node.lng, node.lat]
+                all_nodes.append(node_coord)
+                node_to_ramp[len(all_nodes) - 1] = ramp_idx
 
-        if not ramp_coords:
-            continue
-
-        center = calculate_center(ramp_coords)
-        if center:
-            ramp_centers.append([center.lng, center.lat])
-            valid_ramps.append(ramp)
-
-    if len(valid_ramps) < 2:
+    if len(all_nodes) < 2:
         return []
 
-    # Convert to numpy array for sklearn
-    centers_array = np.array(ramp_centers)
+    # Convert to numpy array
+    nodes_array = np.array(all_nodes)
 
-    # Scale the coordinates for better clustering
-    # Note: We use a small scaling factor since coordinates are already in degrees
-    scaler = StandardScaler()
-    centers_scaled = scaler.fit_transform(centers_array)
+    # Distance threshold (in degrees, roughly 1km = 0.01 degrees)
+    distance_threshold = 0.005
 
-    # Use DBSCAN clustering
-    # eps=0.5 corresponds to about 1km when properly scaled
-    # min_samples=2 means we need at least 2 ramps to form an interchange
-    dbscan = DBSCAN(eps=0.1, min_samples=2)
-    cluster_labels = dbscan.fit_predict(centers_scaled)
+    # Use agglomerative clustering with distance threshold
+    clustering = AgglomerativeClustering(
+        n_clusters=None,
+        distance_threshold=distance_threshold,
+        linkage="single",  # minimum distance between groups
+    )
 
-    # Group ramps by cluster
+    node_labels = clustering.fit_predict(nodes_array)
+
+    # Group ramps based on their nodes' cluster assignments
+    # A ramp belongs to a cluster if any of its nodes belong to that cluster
+    ramp_to_clusters = defaultdict(set)
+
+    for node_idx, cluster_label in enumerate(node_labels):
+        ramp_idx = node_to_ramp[node_idx]
+        ramp_to_clusters[ramp_idx].add(cluster_label)
+
+    # Assign each ramp to the cluster that contains most of its nodes
+    ramp_cluster_assignment = {}
+    for ramp_idx, clusters in ramp_to_clusters.items():
+        # For now, assign to the first cluster found
+        # This ensures all nodes from same ramp stay in same group
+        ramp_cluster_assignment[ramp_idx] = min(clusters)
+
+    # Group ramps by their assigned clusters
     clusters = defaultdict(list)
-    for i, label in enumerate(cluster_labels):
-        if label != -1:  # -1 means noise/outlier
-            clusters[label].append(valid_ramps[i])
+    for ramp_idx, cluster_label in ramp_cluster_assignment.items():
+        clusters[cluster_label].append(ramps[ramp_idx])
 
     # Create interchange objects
     interchanges = []
     for cluster_id, cluster_ramps in clusters.items():
-        if len(cluster_ramps) < 1:
+        if not len(cluster_ramps):
             continue
-        interchange = create_interchange_from_ramps(cluster_ramps, cluster_id)
+        interchange = create_interchange_from_ramps(cluster_ramps, len(interchanges) + 1)
         interchanges.append(interchange)
 
     return interchanges
 
 
-def create_interchange_from_ramps(ramps: list[Ramp], cluster_id: int) -> Interchange:
+def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
     # Calculate bounds from all ramp nodes
     bounds = calculate_bounds(ramps)
     if not bounds:
@@ -371,9 +377,9 @@ def create_interchange_from_ramps(ramps: list[Ramp], cluster_id: int) -> Interch
         # Take the first few unique destinations
         interchange_name = f"Interchange to {','.join(destinations)}"
     else:
-        interchange_name = f"Interchange {cluster_id + 1}"
+        interchange_name = f"Interchange {id}"
 
-    return Interchange(id=cluster_id + 1, name=interchange_name, bounds=bounds, ramps=ramps)
+    return Interchange(id=id, name=interchange_name, bounds=bounds, ramps=ramps)
 
 
 def annotate_interchange(
