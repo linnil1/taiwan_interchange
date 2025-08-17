@@ -1,7 +1,7 @@
 from flask import Flask, Response, jsonify
 from flask_cors import CORS
 
-from data import load_interchanges
+from persistence import load_interchanges
 
 app = Flask(__name__)
 CORS(app)

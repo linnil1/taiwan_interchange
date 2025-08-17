@@ -1,5 +1,7 @@
 import json
 import os
+from collections.abc import Callable
+from functools import partial
 from typing import Literal
 
 import requests
@@ -36,13 +38,21 @@ class OverPassWay(BaseModel):
     nodes: list[int] = []
 
 
+class OverPassRelationMember(BaseModel):
+    """Represents a member of an OverPass API relation"""
+
+    type: Literal["node", "way", "relation"]
+    ref: int
+    role: str = ""
+
+
 class OverPassRelation(BaseModel):
     """Represents a raw OverPass API relation"""
 
     type: Literal["relation"]
     id: int
     tags: dict[str, str] = {}
-    members: list[dict] = []
+    members: list[OverPassRelationMember] = []
 
 
 class OverPassResponse(BaseModel):
@@ -73,6 +83,7 @@ def query_overpass_api() -> dict | None:
     (
       way["highway"="motorway_link"](area.taiwan);
       node["highway"="motorway_junction"](area.taiwan);
+      >;
     );
     out geom;
     """
@@ -142,53 +153,6 @@ def query_unknown_end_nodes(node_ids: list[int]) -> dict | None:
     return response.json()
 
 
-def load_freeway_routes(use_cache: bool = True) -> OverPassResponse:
-    """Load freeway routes Overpass API response from cache file"""
-    cache_file_path = os.path.join(os.path.dirname(__file__), "freeway_cache.json")
-    if os.path.exists(cache_file_path) and use_cache:
-        with open(cache_file_path, encoding="utf-8") as f:
-            data = json.load(f)
-            return OverPassResponse.model_validate(data)
-
-    data = query_freeway_routes()
-    assert data, "No data returned from Overpass API"
-    save_overpass_cache(data, cache_file_path)
-    return OverPassResponse.model_validate(data)
-
-
-def load_provincial_routes(use_cache: bool = True) -> OverPassResponse:
-    """Load provincial routes Overpass API response from cache file"""
-    cache_file_path = os.path.join(os.path.dirname(__file__), "provincial_cache.json")
-    if os.path.exists(cache_file_path) and use_cache:
-        with open(cache_file_path, encoding="utf-8") as f:
-            data = json.load(f)
-            return OverPassResponse.model_validate(data)
-
-    data = query_provincial_routes()
-    assert data, "No data returned from Overpass API"
-    save_overpass_cache(data, cache_file_path)
-    return OverPassResponse.model_validate(data)
-
-
-def load_unknown_end_nodes(
-    node_ids: list[int], interchange_name: str, use_cache: bool = True
-) -> OverPassResponse:
-    """Load unknown end nodes Overpass API response from cache file"""
-    # Use interchange name for cache filename to cache by interchange
-    cache_file_path = os.path.join(
-        os.path.dirname(__file__), f"unknown_cache_{interchange_name.replace(' ', '_')}.json"
-    )
-    if os.path.exists(cache_file_path) and use_cache:
-        with open(cache_file_path, encoding="utf-8") as f:
-            data = json.load(f)
-            return OverPassResponse.model_validate(data)
-
-    data = query_unknown_end_nodes(node_ids)
-    assert data, "No data returned from Overpass API"
-    save_overpass_cache(data, cache_file_path)
-    return OverPassResponse.model_validate(data)
-
-
 def save_overpass_cache(data: dict, cache_file_path: str) -> bool:
     """Save Overpass API response to cache file"""
     with open(cache_file_path, "w", encoding="utf-8") as f:
@@ -197,15 +161,86 @@ def save_overpass_cache(data: dict, cache_file_path: str) -> bool:
     return True
 
 
-def load_overpass(use_cache: bool = True) -> OverPassResponse:
-    """Load Overpass API response from cache file"""
-    cache_file_path = os.path.join(os.path.dirname(__file__), "overpass_cache.json")
+def load_or_fetch_overpass(
+    cache_filename: str,
+    fetch_func: Callable[[], dict | None],
+    use_cache: bool = True,
+) -> OverPassResponse:
+    """
+    Generic function to load from cache or fetch from API
+
+    Args:
+        cache_filename: Name of the cache file (without path)
+        fetch_func: Function to call if cache miss or use_cache=False (should take no arguments)
+        use_cache: Whether to use cache
+    """
+    cache_file_path = os.path.join(os.path.dirname(__file__), cache_filename)
+
     if os.path.exists(cache_file_path) and use_cache:
         with open(cache_file_path, encoding="utf-8") as f:
             data = json.load(f)
             return OverPassResponse.model_validate(data)
 
-    data = query_overpass_api()
+    data = fetch_func()
     assert data, "No data returned from Overpass API"
     save_overpass_cache(data, cache_file_path)
     return OverPassResponse.model_validate(data)
+
+
+def load_freeway_routes(use_cache: bool = True) -> OverPassResponse:
+    """Load freeway routes Overpass API response from cache file"""
+    return load_or_fetch_overpass("freeway_cache.json", query_freeway_routes, use_cache=use_cache)
+
+
+def load_provincial_routes(use_cache: bool = True) -> OverPassResponse:
+    """Load provincial routes Overpass API response from cache file"""
+    return load_or_fetch_overpass(
+        "provincial_cache.json", query_provincial_routes, use_cache=use_cache
+    )
+
+
+def load_unknown_end_nodes(
+    node_ids: list[int], interchange_name: str, use_cache: bool = True
+) -> OverPassResponse:
+    """Load unknown end nodes Overpass API response from cache file"""
+    cache_filename = f"unknown_cache_{interchange_name.replace(' ', '_')}.json"
+    fetch_func = partial(query_unknown_end_nodes, node_ids)
+    return load_or_fetch_overpass(cache_filename, fetch_func, use_cache=use_cache)
+
+
+def extract_to_destination(way: OverPassWay) -> list[str]:
+    """Extract destination from way tags - retrieve all three tags"""
+    destinations = []
+    tags = way.tags
+
+    # Check for 'exit_to' tag
+    if "exit_to" in tags and tags["exit_to"]:
+        destinations.extend(tags["exit_to"].split(";"))
+
+    # Check for 'destination' tag
+    if "destination" in tags and tags["destination"]:
+        destinations.extend(tags["destination"].split(";"))
+
+    # Check for 'ref' tag
+    if "ref" in tags and tags["ref"] and not destinations:
+        destinations.append(tags["ref"])
+
+    return destinations
+
+
+def is_node_traffic_light(node: OverPassNode | None) -> bool:
+    """Check if a node is a traffic light or similar control node"""
+    if node and node.tags:
+        # Check for traffic control tags
+        return (
+            node.tags.get("highway") == "traffic_signals"
+            or node.tags.get("traffic_signals") is not None
+            or node.tags.get("highway") == "stop"
+            or node.tags.get("stop") is not None
+        )
+    return False
+
+
+def load_overpass(use_cache: bool = True) -> OverPassResponse:
+    """Load Overpass API response from cache file"""
+    return load_or_fetch_overpass("overpass_cache.json", query_overpass_api, use_cache=use_cache)

@@ -3,3 +3,4 @@ Flask-Cors
 pydantic
 scikit-learn
 numpy
+networkx
