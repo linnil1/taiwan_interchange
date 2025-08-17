@@ -153,6 +153,24 @@ def query_unknown_end_nodes(node_ids: list[int]) -> dict | None:
     return response.json()
 
 
+def query_nearby_weigh_stations() -> dict | None:
+    """Query Overpass API for weigh stations with names ending in '地磅站' in Taiwan"""
+    overpass_url = "http://overpass-api.de/api/interpreter"
+
+    query = """
+    [out:json][timeout:60];
+    area["name:en"="Taiwan"]->.taiwan;
+    (
+      way["building"="yes"]["name"~"地磅站$"](area.taiwan);
+    );
+    out geom;
+    """
+
+    response = requests.post(overpass_url, data={"data": query})
+    response.raise_for_status()
+    return response.json()
+
+
 def save_overpass_cache(data: dict, cache_file_path: str) -> bool:
     """Save Overpass API response to cache file"""
     with open(cache_file_path, "w", encoding="utf-8") as f:
@@ -206,6 +224,13 @@ def load_unknown_end_nodes(
     cache_filename = f"unknown_cache_{interchange_name.replace(' ', '_')}.json"
     fetch_func = partial(query_unknown_end_nodes, node_ids)
     return load_or_fetch_overpass(cache_filename, fetch_func, use_cache=use_cache)
+
+
+def load_nearby_weigh_stations(use_cache: bool = True) -> OverPassResponse:
+    """Load nearby weigh stations Overpass API response from cache file"""
+    return load_or_fetch_overpass(
+        "weigh_stations_cache.json", query_nearby_weigh_stations, use_cache=use_cache
+    )
 
 
 def extract_to_destination(way: OverPassWay) -> list[str]:

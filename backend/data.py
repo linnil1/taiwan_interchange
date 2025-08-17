@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.cluster import AgglomerativeClustering
 
 from graph_operations import (
+    calculate_distance,
     get_begin_nodes,
     get_connected_ramps,
     get_reverse_topological_order,
@@ -16,11 +17,45 @@ from osm import (
     extract_to_destination,
     is_node_traffic_light,
     load_freeway_routes,
+    load_nearby_weigh_stations,
     load_overpass,
     load_provincial_routes,
     load_unknown_end_nodes,
 )
 from persistence import save_interchanges
+
+
+def normalize_weigh_station_name(station_name: str) -> str:
+    """
+    Normalize weigh station names by removing directional suffixes.
+
+    Examples:
+    - "頭城南向地磅站" -> "頭城地磅站"
+    - "xxx向地磅站" -> "xxx地磅站"
+    """
+    import re
+
+    # Pattern to match directional suffixes like "南向", "北向", "東向", "西向" before "地磅站"
+    pattern = r"(.+?)[東西南北]向地磅站$"
+    match = re.match(pattern, station_name)
+    if match:
+        return match.group(1) + "地磅站"
+    return station_name
+
+
+def load_and_filter_weigh_stations(use_cache: bool = True) -> list[OverPassWay]:
+    """
+    Load weigh stations from API and filter for valid entries.
+
+    Returns:
+        List of filtered OverPassWay objects with name and geometry
+    """
+    print("Loading weigh stations...")
+    weigh_stations_response = load_nearby_weigh_stations(use_cache)
+    weigh_stations = weigh_stations_response.list_ways()
+    weigh_stations = [ws for ws in weigh_stations if ws.tags.get("name") and ws.geometry]
+    print(f"Found {len(weigh_stations)} weigh stations")
+    return weigh_stations
 
 
 def calculate_bounds(ramps: list[Ramp]) -> Bounds | None:
@@ -323,7 +358,8 @@ def annotate_ramp(
     node_to_relations: dict[int, Relation] | None = None,
 ) -> Ramp:
     """Annotate single ramp with destinations using multiple methods"""
-    all_destinations = []
+    # original destination: weight station is already set before this func
+    all_destinations = ramp.destination
 
     # Try relation mapping first (highest priority)
     if node_to_relations:
@@ -492,26 +528,105 @@ def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
     return Interchange(id=id, name=interchange_name, bounds=bounds, ramps=ramps)
 
 
+def find_closest_weigh_station_name(
+    ramp: Ramp, weigh_stations: list[OverPassWay], threshold_km: float = 2.0
+) -> str | None:
+    """
+    Find the closest weigh station name to the ramp's end node within threshold distance
+
+    Args:
+        ramp: Ramp object to find station for
+        weigh_station_ways: List of OverPassWay objects containing weigh station data
+        threshold_km: Maximum distance threshold in kilometers
+
+    Returns:
+        Weigh station name if found within threshold, None otherwise
+    """
+    # Get 10 evenly spaced nodes from the ramp
+    nodes = ramp.list_nodes()
+    step = len(nodes) // 10
+    step = step if step > 0 else 1  # Ensure step is at least 1
+    nodes = nodes[::step]
+
+    closest_distance = float("inf")
+    closest_station_name = None
+
+    for station in weigh_stations:
+        coord = station.geometry[0]
+        distances = [calculate_distance(node.lat, node.lng, coord.lat, coord.lng) for node in nodes]
+        distance = min(distances) if distances else float("inf")
+        if distance < closest_distance:
+            closest_distance = distance
+            closest_station_name = station.tags["name"]
+
+    # Return station name only if within threshold
+    if closest_distance <= threshold_km:
+        return closest_station_name
+    return None
+
+
 def annotate_interchange_name(
-    interchange: Interchange, node_dict: dict[int, OverPassNode]
+    interchange: Interchange,
+    node_dict: dict[int, OverPassNode],
+    weigh_stations: list[OverPassWay],
+    distance_threshold_km: float = 0.05,
 ) -> Interchange:
-    """Annotate single interchange with proper name based on motorway_junction nodes"""
+    """
+    Annotate single interchange with proper name based on motorway_junction nodes
+    If no junction name found, try to find nearby weigh stations within threshold distance
+    """
     # Extract proper name from motorway_junction nodes
     junction_name = extract_name_from_interchange(interchange.ramps, node_dict)
 
     if junction_name:
         # Use the junction name
-        annotated_interchange = Interchange(
-            id=interchange.id,
-            name=junction_name,
-            bounds=interchange.bounds,
-            ramps=interchange.ramps,
-        )
-    else:
-        # Keep the original name if no junction name found
-        annotated_interchange = interchange
+        interchange.name = junction_name
+        return interchange
 
-    return annotated_interchange
+    # No junction name found, try to find nearby weigh stations
+    name, ramp_to_station = get_interchange_and_ramp_name_by_weight_stations(
+        interchange.ramps, interchange, weigh_stations, distance_threshold_km
+    )
+    if name:
+        interchange.name = name
+        for ramp in interchange.ramps:
+            if ramp.id in ramp_to_station:
+                ramp.destination.append(ramp_to_station[ramp.id])
+
+    return interchange
+
+
+def get_interchange_and_ramp_name_by_weight_stations(
+    interchange_ramps: list[Ramp],
+    interchange: Interchange,
+    weigh_stations: list[OverPassWay],
+    distance_threshold_km: float = 0.05,
+) -> tuple[str, dict[int, str]]:
+    # First, find all weigh stations for all ramps (store original names)
+    ramp_to_station = {}
+    for ramp in interchange_ramps:
+        weigh_station_name = find_closest_weigh_station_name(
+            ramp, weigh_stations, distance_threshold_km
+        )
+        if weigh_station_name:
+            ramp_to_station[ramp.id] = weigh_station_name
+
+    # Check if we found any weigh stations
+    if not ramp_to_station:
+        return "", {}
+
+    # Fix max occur and assign it
+    cramps = get_connected_ramps(interchange.ramps)
+    for ramps in cramps:
+        station_name_count = defaultdict(int)
+        for ramp in ramps:
+            if ramp.id in ramp_to_station:
+                station_name_count[ramp_to_station[ramp.id]] += 1
+        most_frequent_name = max(station_name_count, key=station_name_count.get)
+        for ramp in ramps:
+            if ramp.id in ramp_to_station:
+                ramp_to_station[ramp.id] = most_frequent_name
+    return normalize_weigh_station_name(list(ramp_to_station.values())[0]), ramp_to_station
 
 
 def annotate_interchange_ramps(
@@ -543,11 +658,12 @@ def annotate_interchange(
     node_dict: dict[int, OverPassNode],
     way_dict: dict[int, OverPassWay],
     node_to_relations: dict[int, Relation],
+    weigh_stations: list[OverPassWay],
     use_cache: bool = True,
 ) -> Interchange:
     """Annotate single interchange with proper name and ramp destinations"""
     # First annotate the interchange name
-    interchange = annotate_interchange_name(interchange, node_dict)
+    interchange = annotate_interchange_name(interchange, node_dict, weigh_stations)
 
     # Then annotate the ramps
     interchange = annotate_interchange_ramps(interchange, way_dict, node_to_relations, use_cache)
@@ -669,9 +785,14 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     interchanges = tune_interchange(interchanges)
     print(f"After tuning: {len(interchanges)} interchanges")
 
+    # Load weigh stations for naming fallback
+    weigh_stations = load_and_filter_weigh_stations(use_cache)
+
     # Annotate interchanges with proper names and ramp destinations
     interchanges = [
-        annotate_interchange(interchange, node_dict, way_dict, node_to_relations, use_cache)
+        annotate_interchange(
+            interchange, node_dict, way_dict, node_to_relations, weigh_stations, use_cache
+        )
         for interchange in interchanges
     ]
     print(f"Annotated {len(interchanges)} interchanges")
