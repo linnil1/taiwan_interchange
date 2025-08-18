@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Map from '$lib/components/Map.svelte';
+	import InterchangeList from '$lib/components/InterchangeList.svelte';
 	import InterchangeDetail from '$lib/components/InterchangeDetail.svelte';
 	import { interchangesStore, fetchInterchanges } from '$lib/stores/interchanges.js';
 	import type { Interchange } from '$lib/types.js';
@@ -17,10 +18,12 @@
 	// Derive filtered interchanges from store and search term
 	let filteredInterchanges = $derived(
 		$interchangesStore && searchTerm !== undefined
-			? $interchangesStore.filter((interchange: Interchange) =>
-					interchange.name.toLowerCase().includes(searchTerm.toLowerCase())
+			? $interchangesStore.filter(
+					(interchange: Interchange) =>
+						interchange.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+						String(interchange.id).includes(searchTerm)
 				)
-			: []
+			: $interchangesStore || []
 	);
 
 	function selectInterchange(interchange: Interchange) {
@@ -47,42 +50,14 @@
 </svelte:head>
 
 <div class="flex h-screen font-sans">
-	<!-- Left Sidebar - Compact List -->
+	<!-- Left Sidebar - Interchange List component -->
 	<div class="w-80 flex flex-col bg-white border-r border-gray-300">
-		<!-- Search Controls -->
-		<div class="p-3 border-b border-gray-300">
-			<input
-				type="text"
-				placeholder="Search interchanges..."
-				bind:value={searchTerm}
-				class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-			/>
-		</div>
-
-		<!-- Compact Interchange List -->
-		<div class="flex-1 overflow-y-auto">
-			<div class="p-2">
-				<div class="text-xs text-gray-500 mb-2">
-					{filteredInterchanges.length} interchanges
-				</div>
-				{#each filteredInterchanges as interchange}
-					<button
-						class="w-full text-left p-3 mb-1 rounded border-l-4 transition-colors {selectedInterchange?.id ===
-						interchange.id
-							? 'bg-blue-50 border-blue-500'
-							: 'bg-white border-transparent hover:bg-gray-50'}"
-						onclick={() => selectInterchange(interchange)}
-					>
-						<div class="font-medium text-sm text-gray-800 truncate">
-							{interchange.name}
-						</div>
-						<div class="text-xs text-gray-500 mt-1">
-							{interchange.ramps.length} ramps
-						</div>
-					</button>
-				{/each}
-			</div>
-		</div>
+		<InterchangeList
+			interchanges={filteredInterchanges}
+			bind:searchTerm
+			{selectedInterchange}
+			onSelectInterchange={selectInterchange}
+		/>
 	</div>
 
 	<!-- Detail Sidebar (appears when item selected) -->

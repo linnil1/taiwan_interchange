@@ -97,12 +97,19 @@
 
 			const marker = L.marker([centerLat, centerLng], {
 				icon: L.divIcon({
-					html: `<div style="background: ${isSelected ? '#ff4444' : '#2196f3'}; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${interchange.ramps.length}</div>`,
+					html: `<div style="background: ${isSelected ? '#ff4444' : '#2196f3'}; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${interchange.id}</div>`,
 					className: 'custom-interchange-marker',
 					iconSize: [24, 24],
 					iconAnchor: [12, 12]
 				})
 			}).addTo(map);
+
+			// Add tooltip with interchange index and name
+			marker.bindTooltip(`#${interchange.id} ${interchange.name}`, {
+				permanent: false,
+				direction: 'top',
+				offset: [0, -10]
+			});
 
 			// Add click handler to marker
 			marker.on('click', () => {

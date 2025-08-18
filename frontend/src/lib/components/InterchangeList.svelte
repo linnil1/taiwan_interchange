@@ -1,31 +1,53 @@
 <script lang="ts">
 	import type { Interchange } from '$lib/types.js';
 
+	// Svelte 5 runes: props + bindable local state for search
 	let {
 		interchanges = [],
-		searchTerm = '',
 		selectedInterchange = null,
-		onSelectInterchange
-	}: {
+		onSelectInterchange,
+		searchTerm = $bindable('')
+	} = $props<{
 		interchanges: Interchange[];
-		searchTerm: string;
 		selectedInterchange: Interchange | null;
 		onSelectInterchange: (interchange: Interchange) => void;
-	} = $props();
+		searchTerm: string;
+	}>();
+
+	let listContainer: HTMLDivElement;
+
+	// Scroll to selected interchange when it changes
+	$effect(() => {
+		if (selectedInterchange && listContainer) {
+			// Find the element for the selected interchange
+			const selectedElement = listContainer.querySelector(
+				`[data-interchange-id="${selectedInterchange.id}"]`
+			);
+			if (selectedElement) {
+				selectedElement.scrollIntoView({
+					behavior: 'smooth',
+					block: 'center'
+				});
+			}
+		}
+	});
 
 	function handleInterchangeClick(interchange: Interchange) {
 		onSelectInterchange(interchange);
 	}
 </script>
 
-<div class="h-full overflow-y-auto bg-white">
-	<div class="bg-gray-100 p-3 border-b border-gray-300 font-bold sticky top-0">
-		Interchanges
-		{#if searchTerm}
-			(filtered: {interchanges.length})
-		{:else}
-			({interchanges.length})
-		{/if}
+<div class="h-full overflow-y-auto bg-white" bind:this={listContainer}>
+	<div class="bg-gray-100 p-3 border-b border-gray-300 sticky top-0">
+		<div class="font-bold">
+			Interchanges {searchTerm ? `(filtered: ${interchanges.length})` : `(${interchanges.length})`}
+		</div>
+		<input
+			class="mt-2 w-full rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+			type="search"
+			placeholder="Search by name or #id"
+			bind:value={searchTerm}
+		/>
 	</div>
 
 	{#if interchanges.length === 0}
@@ -43,20 +65,14 @@
 				selectedInterchange.id === interchange.id
 					? 'bg-blue-50 border-l-4 border-l-blue-500'
 					: ''}"
+				data-interchange-id={interchange.id}
 				onclick={() => handleInterchangeClick(interchange)}
 				role="button"
 				tabindex="0"
 				onkeydown={(e) => e.key === 'Enter' && handleInterchangeClick(interchange)}
 			>
 				<div>
-					<div class="font-medium text-gray-800">{interchange.name}</div>
-					<div class="text-xs text-gray-600 mt-1">
-						Bounds: {interchange.bounds.min_lat.toFixed(4)}, {interchange.bounds.min_lng.toFixed(4)}
-						to {interchange.bounds.max_lat.toFixed(4)}, {interchange.bounds.max_lng.toFixed(4)}
-					</div>
-				</div>
-				<div class="bg-blue-500 text-white px-2 py-1 rounded-full text-xs font-bold">
-					{interchange.ramps.length}
+					<div class="font-medium text-gray-800">#{interchange.id} {interchange.name}</div>
 				</div>
 			</div>
 		{/each}
