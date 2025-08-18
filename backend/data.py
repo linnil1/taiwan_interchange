@@ -1,3 +1,4 @@
+import re
 from collections import defaultdict
 
 import numpy as np
@@ -33,7 +34,6 @@ def normalize_weigh_station_name(station_name: str) -> str:
     - "頭城南向地磅站" -> "頭城地磅站"
     - "xxx向地磅站" -> "xxx地磅站"
     """
-    import re
 
     # Pattern to match directional suffixes like "南向", "北向", "東向", "西向" before "地磅站"
     pattern = r"(.+?)[東西南北]向地磅站$"
@@ -395,6 +395,16 @@ def extract_name_from_interchange(ramps: list[Ramp], node_dict: dict[int, OverPa
     return ";".join(set(junction_names)) if junction_names else ""
 
 
+def merge_interchanges(interchanges: list[Interchange]) -> Interchange:
+    """Merge interchanges"""
+    ramps = []
+    for interchange in interchanges:
+        ramps.extend(interchange.ramps)
+    merged_interchange = create_interchange_from_ramps(ramps, interchanges[0].id)
+    merged_interchange.name = interchanges[0].name
+    return merged_interchange
+
+
 def group_ramps_by_interchange(
     ramps: list[Ramp], distance_threshold: float = 0.005
 ) -> list[Interchange]:
@@ -455,56 +465,34 @@ def group_ramps_by_interchange(
     return interchanges
 
 
-def tune_interchange(interchanges: list[Interchange]) -> list[Interchange]:
+def tune_interchange(
+    interchanges: list[Interchange],
+) -> list[Interchange]:
     """
     Manual tuning of interchanges after initial clustering.
-    Apply specific rules for known interchange groupings.
+    Workflow:
+    1. Merge interchanges with identical names
+    2. Split interchanges whose names contain semicolons
     """
-    # Find interchanges that should be regrouped
-    special_nodes = set(
-        [
-            1549192482,  # 新化端
-        ]
-    )
 
-    # Separate interchanges that match special criteria
-    special_interchanges = []
-    regular_interchanges = []
-
+    interchange_names = defaultdict(list)
     for interchange in interchanges:
-        # Check if the interchange name contains any of the special names
-        is_special = (
-            len(special_nodes.intersection([node.id for node in interchange.list_nodes()])) > 0
-        )
+        interchange_names[interchange.name].append(interchange)
 
-        if is_special:
-            special_interchanges.append(interchange)
+    new_interchanges = []
+    for name, interchanges_group in interchange_names.items():
+        if len(interchanges_group) > 1:
+            merged = merge_interchanges(interchanges_group)
+            new_interchanges.append(merged)
+        elif ";" in name:
+            new_interchanges.extend(group_ramps_by_interchange(interchanges_group[0].ramps, 0.001))
         else:
-            regular_interchanges.append(interchange)
+            new_interchanges.append(interchanges_group[0])
 
-    # If we found special interchanges, regroup them with stricter parameters
-    if len(special_interchanges) >= 1:
-        print(f"Found {len(special_interchanges)} special interchanges to regroup")
+    for i, interchange in enumerate(new_interchanges):
+        interchange.id = i + 1
 
-        # Extract all ramps from special interchanges
-        all_special_ramps = []
-        for interchange in special_interchanges:
-            all_special_ramps.extend(interchange.ramps)
-
-        # Regroup with stricter parameters
-        regrouped_interchanges = group_ramps_by_interchange(all_special_ramps, 0.001)
-
-        # Add regrouped interchanges to regular ones
-        regular_interchanges.extend(regrouped_interchanges)
-
-        # Reassign IDs to maintain uniqueness
-        for i, interchange in enumerate(regular_interchanges):
-            interchange.id = i + 1
-    else:
-        # No special interchanges found, return original list
-        regular_interchanges = interchanges
-
-    return regular_interchanges
+    return new_interchanges
 
 
 def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
@@ -622,7 +610,9 @@ def get_interchange_and_ramp_name_by_weight_stations(
         for ramp in ramps:
             if ramp.id in ramp_to_station:
                 station_name_count[ramp_to_station[ramp.id]] += 1
-        most_frequent_name = max(station_name_count, key=station_name_count.get)
+        if not station_name_count:
+            continue
+        most_frequent_name = max(station_name_count.keys(), key=lambda x: station_name_count[x])
         for ramp in ramps:
             if ramp.id in ramp_to_station:
                 ramp_to_station[ramp.id] = most_frequent_name
@@ -751,6 +741,7 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     print("Getting Overpass data...")
     response = load_overpass(use_cache)
     ways = response.list_ways()
+    ways = [i for i in ways if i.tags.get("access") not in ["private", "no", "emergency"]]
     nodes = response.list_nodes()
     print(f"Found {len(ways)} motorway links and {len(nodes)} motorway junctions")
 
@@ -781,14 +772,19 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     interchanges = group_ramps_by_interchange(ramps, 0.005)
     print(f"Identified {len(interchanges)} interchanges")
 
-    # Apply manual tuning for specific interchanges
-    interchanges = tune_interchange(interchanges)
-    print(f"After tuning: {len(interchanges)} interchanges")
-
     # Load weigh stations for naming fallback
     weigh_stations = load_and_filter_weigh_stations(use_cache)
 
-    # Annotate interchanges with proper names and ramp destinations
+    # Apply manual tuning for specific interchanges (require annotate name first)
+    interchanges = [
+        annotate_interchange_name(interchange, node_dict, weigh_stations)
+        for interchange in interchanges
+    ]
+    interchanges = tune_interchange(interchanges)
+    print(f"After tuning: {len(interchanges)} interchanges")
+
+    # Annotate interchanges with proper ramp destinations
+    # (the interchange is annotated again)
     interchanges = [
         annotate_interchange(
             interchange, node_dict, way_dict, node_to_relations, weigh_stations, use_cache
