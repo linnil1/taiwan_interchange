@@ -32,6 +32,7 @@ from persistence import save_interchanges
 from utils import (
     calculate_bounds,
     calculate_distance,
+    choose_modal_per_group,
     normalize_weigh_station_name,
 )
 
@@ -186,26 +187,21 @@ def merge_interchanges(interchanges: list[Interchange]) -> Interchange:
     return merged_interchange
 
 
-def group_ramps_by_interchange(
+def group_ramps_to_interchange(
     ramps: list[Ramp], distance_threshold: float = 0.005
 ) -> list[Interchange]:
     """Group ramps by interchange using minimum distance clustering with all nodes"""
     if not ramps:
         return []
 
-    # Collect all nodes from all ramps, grouped by branch_id (precomputed components)
+    # Collect all nodes from all ramps, grouped by branch_id
     all_nodes = []
     branch_to_ramps: dict[int, list[Ramp]] = defaultdict(list)
     for r in ramps:
         branch_to_ramps[r.branch_id].append(r)
-    node_to_cramps = []
-
-    for key, ramps_group in enumerate(branch_to_ramps.values()):
-        for ramp in ramps_group:
-            for node in ramp.list_nodes():
-                node_coord = [node.lng, node.lat]
-                all_nodes.append(node_coord)
-                node_to_cramps.append(key)
+    for ramp in ramps:
+        for node in ramp.list_nodes():
+            all_nodes.append((node.lat, node.lng, ramp.branch_id))
 
     if len(all_nodes) < 2:
         return [create_interchange_from_ramps(ramps, 1)]
@@ -216,35 +212,27 @@ def group_ramps_by_interchange(
         distance_threshold=distance_threshold,
         linkage="single",  # minimum distance between groups
     )
-    nodes_array = np.array(all_nodes)
+    nodes_array = np.array([node[:2] for node in all_nodes])
     node_labels = clustering.fit_predict(nodes_array)
 
-    # Group ramps based on their nodes' cluster assignments
-    cramp_to_clusters = defaultdict(list)
-
+    # rearrange cluster label by branch id
+    branch_to_clusters = defaultdict(list)
     for node_idx, cluster_label in enumerate(node_labels):
-        id = node_to_cramps[node_idx]
-        cramp_to_clusters[id].append(cluster_label)
+        branch_id = all_nodes[node_idx][2]
+        branch_to_clusters[branch_id].append(cluster_label)
 
-    # Assign each ramp to the cluster that contains most of its nodes
-    cramp_cluster_assignment = {}
-    for cramp_id, clusters in cramp_to_clusters.items():
-        if clusters:
-            # Use the most frequent cluster, or first one if tied
-            most_frequent_cluster = max(set(clusters), key=clusters.count)
-            cramp_cluster_assignment[cramp_id] = most_frequent_cluster
+    # Get the modal cluster per branch
+    branch_assignment = choose_modal_per_group(branch_to_clusters)
+    cluster_to_branch = defaultdict(list)
+    for branch_id, cluster_label in branch_assignment.items():
+        cluster_to_branch[cluster_label].append(branch_id)
 
     # Create interchange objects
     interchanges = []
-    for cluster_label_target in set(cramp_cluster_assignment.values()):
-        cluster_ramps = []
-        for cramp_id, cluster_label in cramp_cluster_assignment.items():
-            if cluster_label == cluster_label_target:
-                # Map cramp_id back into the branch_to_ramps order we enumerated above
-                branch_id = list(branch_to_ramps.keys())[cramp_id]
-                cluster_ramps.extend(branch_to_ramps[branch_id])
-        if cluster_ramps:
-            interchange = create_interchange_from_ramps(cluster_ramps, len(interchanges) + 1)
+    for cluster_label, branch_ids in cluster_to_branch.items():
+        ramps = [ramp for branch_id in branch_ids for ramp in branch_to_ramps[branch_id]]
+        if ramps:
+            interchange = create_interchange_from_ramps(ramps, len(interchanges) + 1)
             interchanges.append(interchange)
     return interchanges
 
@@ -266,13 +254,10 @@ def split_interchanges_by_name_marker(
     for ic in interchanges:
         if ";" in ic.name:
             print(f"Splitting interchange: {ic.name}")
-            result.extend(group_ramps_by_interchange(ic.ramps, distance_threshold))
+            result.extend(group_ramps_to_interchange(ic.ramps, distance_threshold))
         else:
             result.append(ic)
-    # Renumber after split
-    for i, ic in enumerate(result):
-        ic.id = i + 1
-    return result
+    return renumber_interchanges(result)
 
 
 def merge_interchanges_by_name(interchanges: list[Interchange]) -> list[Interchange]:
@@ -294,10 +279,14 @@ def merge_interchanges_by_name(interchanges: list[Interchange]) -> list[Intercha
             merged.append(combined)
         else:
             merged.append(group[0])
-    # Renumber after merge
-    for i, ic in enumerate(merged):
+    return renumber_interchanges(merged)
+
+
+def renumber_interchanges(interchanges: list[Interchange]) -> list[Interchange]:
+    """Renumber interchanges sequentially starting from 1 and return the list."""
+    for i, ic in enumerate(interchanges):
         ic.id = i + 1
-    return merged
+    return interchanges
 
 
 def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
@@ -412,21 +401,16 @@ def get_interchange_and_ramp_name_by_weight_stations(
     if not ramp_to_station:
         return "", {}
 
-    # Fix max occur and assign it using branch_id groupings
-    branch_to_ramps: dict[int, list[Ramp]] = defaultdict(list)
+    # Overwrite by branch majority so all ramps in a branch share the modal station name
+    # Build group->values list using branch_id and current mapping
+    branch_to_values: dict[int, list[str]] = defaultdict(list)
     for r in interchange.ramps:
-        branch_to_ramps[r.branch_id].append(r)
-    for ramps in branch_to_ramps.values():
-        station_name_count = defaultdict(int)
-        for ramp in ramps:
-            if ramp.id in ramp_to_station:
-                station_name_count[ramp_to_station[ramp.id]] += 1
-        if not station_name_count:
-            continue
-        most_frequent_name = max(station_name_count.keys(), key=lambda x: station_name_count[x])
-        for ramp in ramps:
-            if ramp.id in ramp_to_station:
-                ramp_to_station[ramp.id] = most_frequent_name
+        if r.id in ramp_to_station:
+            branch_to_values[r.branch_id].append(ramp_to_station[r.id])
+    branch_modal = choose_modal_per_group(branch_to_values)
+    for r in interchange.ramps:
+        if r.id in ramp_to_station and r.branch_id in branch_modal:
+            ramp_to_station[r.id] = branch_modal[r.branch_id]
     return normalize_weigh_station_name(list(ramp_to_station.values())[0]), ramp_to_station
 
 
@@ -452,24 +436,6 @@ def annotate_interchange_ramps(
         bounds=interchange.bounds,
         ramps=ramps,
     )
-
-
-def annotate_interchange(
-    interchange: Interchange,
-    node_dict: dict[int, OverPassNode],
-    way_dict: dict[int, OverPassWay],
-    node_to_relations: dict[int, Relation],
-    weigh_stations: list[OverPassWay],
-    use_cache: bool = True,
-) -> Interchange:
-    """Annotate single interchange with proper name and ramp destinations"""
-    # First annotate the interchange name
-    interchange = annotate_interchange_name(interchange, node_dict, weigh_stations)
-
-    # Then annotate the ramps
-    interchange = annotate_interchange_ramps(interchange, way_dict, node_to_relations, use_cache)
-
-    return interchange
 
 
 def process_relations_by_way(response: OverPassResponse, road_type: str) -> dict[int, Relation]:
@@ -586,7 +552,7 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     # Annotate branch/component ids on paths for downstream grouping
     ramps = assign_branch_ids(ramps)
     # Group ramps into interchanges
-    interchanges = group_ramps_by_interchange(ramps, 0.005)
+    interchanges = group_ramps_to_interchange(ramps, 0.005)
     print(f"Identified {len(interchanges)} interchanges")
 
     # Load weigh stations for naming fallback
@@ -603,12 +569,13 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     interchanges = merge_interchanges_by_name(interchanges)
     print(f"After merge: {len(interchanges)} interchanges")
 
-    # Annotate interchanges with proper ramp destinations
-    # (the interchange is annotated again)
+    # Annotate interchange again, and annotate ramp
     interchanges = [
-        annotate_interchange(
-            interchange, node_dict, way_dict, node_to_relations, weigh_stations, use_cache
-        )
+        annotate_interchange_name(interchange, node_dict, weigh_stations)
+        for interchange in interchanges
+    ]
+    interchanges = [
+        annotate_interchange_ramps(interchange, way_dict, node_to_relations, use_cache)
         for interchange in interchanges
     ]
     print(f"Annotated {len(interchanges)} interchanges")

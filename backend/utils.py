@@ -4,7 +4,9 @@ Utility functions shared across backend modules.
 
 import math
 import re
-from collections.abc import Iterable
+from collections import Counter
+from collections.abc import Hashable, Iterable
+from typing import TypeVar
 
 from models import Bounds, Node
 
@@ -64,3 +66,32 @@ def calculate_bounds(nodes: Iterable[Node]) -> Bounds | None:
         return None
 
     return Bounds(min_lat=min(lats), max_lat=max(lats), min_lng=min(lngs), max_lng=max(lngs))
+
+
+# Generic type for modal aggregation per group; must be hashable for counting
+T = TypeVar("T", bound=Hashable)
+
+
+def choose_modal_per_group(group_to_values: dict[int, list[T]]) -> dict[int, T]:
+    """Return the modal value for each group with deterministic tie-breaking.
+
+    Inputs:
+        - group_to_values: mapping from an integer group key to a list of hashable values.
+
+    Returns:
+        - dict[int, T]: mapping from group key to its modal value. If a group has
+            multiple values tied for max frequency, the earliest occurrence in the
+            group's input list is chosen.
+    """
+    result: dict[int, T] = {}
+    for gid, values in group_to_values.items():
+        if not values:
+            continue
+        counts = Counter(values)
+        max_count = max(counts.values())
+        # Deterministic tie-break: earliest in the original list with max frequency
+        for v in values:
+            if counts[v] == max_count:
+                result[gid] = v
+                break
+    return result
