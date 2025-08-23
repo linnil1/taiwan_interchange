@@ -1,5 +1,6 @@
 """
 Path-level operations: build Path objects and split Ways into path segments.
+Also includes helpers for concatenation and freeway endpoint extraction.
 """
 
 from models import Node, Path
@@ -93,3 +94,14 @@ def break_paths_by_traffic_lights(
     for path in paths:
         path.ended = is_light.get(path.nodes[-1].id, False) if path.nodes else False
     return paths
+
+
+def concat_paths(path1: list[Path], path2: list[Path]) -> list[Path]:
+    """Concatenate two lists of paths, ensuring unique in path"""
+    seen: set[int] = set()
+    result: list[Path] = []
+    for p in path1 + path2:
+        if p.id not in seen:
+            seen.add(p.id)
+            result.append(p)
+    return result

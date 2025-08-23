@@ -10,6 +10,8 @@ from graph_operations import (
     build_dag_edges,
     connect_ramps_by_nodes,
     contract_paths_to_ramps,
+    extract_endpoint_ways,
+    filter_endpoints_by_motorway_link,
     get_reverse_topological_order,
 )
 from models import Interchange, Node, Ramp, Relation
@@ -17,6 +19,7 @@ from osm import (
     OverPassNode,
     OverPassResponse,
     OverPassWay,
+    extract_freeway_related_ways,
     extract_to_destination,
     is_way_access,
     load_freeway_routes,
@@ -28,6 +31,7 @@ from osm import (
 from path_operations import (
     break_paths_by_endpoints,
     break_paths_by_traffic_lights,
+    concat_paths,
     process_single_path,
 )
 from persistence import save_interchanges
@@ -44,6 +48,12 @@ SPECIAL_ISOLATE_BRANCH_WAY_IDS: set[int] = {
     135638645,  # 南深路出口匝道
     328852477,  # 環北交流道
     50893495,  # 環北交流道
+    922785991,  # 大鵬灣端
+    612035219,  # 大鵬灣端
+    383444253,  # 左營端
+    277512394,  # 左營端
+    564743832,  # 左營端
+    277512777,  # 左營端
 }
 
 # Explicit interchange name overrides when an interchange contains a way ID
@@ -54,6 +64,12 @@ WAY_TO_INTERCHANGE_NAME: dict[int, str] = {
     260755985: "田寮地磅站",
     328852477: "環北交流道",
     50893495: "環北交流道",
+    922785991: "大鵬灣端",
+    612035219: "大鵬灣端",
+    383444253: "左營端",
+    277512394: "左營端",
+    564743832: "左營端",
+    277512777: "左營端",
 }
 
 # Ignore specific nodes when extracting names (these should not name interchanges)
@@ -603,7 +619,13 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     ways = response.list_ways()
     ways = [i for i in ways if is_way_access(i)]
     nodes = response.list_nodes()
-    print(f"Found {len(ways)} motorway links and {len(nodes)} motorway junctions")
+    # Also include the very first/last non-motorway_link ways at freeway endpoints
+    freeway_resp = load_freeway_routes(use_cache)
+    freeway_ways = extract_freeway_related_ways(freeway_resp)
+    freeway_paths = [process_single_path(way) for way in freeway_ways]
+    freeway_endpoints = extract_endpoint_ways(freeway_paths)
+    print(f"Found {len(freeway_endpoints)} freeway endpoint ways (pre-filter)")
+    # We'll filter right before concatenation when motorway_link paths are available
 
     if not ways:
         print("No motorway links found in Tainan")
@@ -622,6 +644,13 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     # Process individual paths from ways
     paths = [process_single_path(way) for way in ways]
     print(f"Processed {len(paths)} paths")
+
+    # Filter freeway endpoints by motorway_link connectivity and then concatenate
+    freeway_endpoints = filter_endpoints_by_motorway_link(freeway_endpoints, paths)
+    paths = concat_paths(paths, freeway_endpoints)
+    print(
+        f"Found {len(paths)} total paths (motorway_link + freeway endpoints) and {len(nodes)} motorway junctions"
+    )
 
     # Group paths into ramps
     paths = break_paths_by_endpoints(paths)

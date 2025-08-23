@@ -275,3 +275,41 @@ def is_way_access(way: OverPassWay) -> bool:
     """Return True if the way is allowed by access tag."""
     access = way.tags.get("access") if isinstance(way.tags, dict) else None
     return access not in ["private", "no", "emergency", "permissive"]
+
+
+def is_way_motorway_link(way: OverPassWay) -> bool:
+    """Return True if the way has highway=motorway_link."""
+    return (way.tags or {}).get("highway") == "motorway_link"
+
+
+def extract_freeway_related_ways(response: OverPassResponse) -> list[OverPassWay]:
+    """Extract all ways that are members of freeway relations from a freeway Overpass response."""
+    if not response.elements:
+        return []
+
+    ways = response.list_ways()
+    nodes = response.list_nodes()
+    way_by_id = {w.id: w for w in ways}
+    node_by_id = {n.id: n for n in nodes}
+    related_ids: list[int] = []
+    for rel in response.list_relations():
+        if rel.tags.get("type") != "route" or "國道一號甲線" in rel.tags.get("name", ""):
+            continue
+        related_ids.extend([m.ref for m in rel.members if m.type == "way"])
+
+    # Preserve order, de-dup, and only return ways that have nodes/geometry
+    seen: set[int] = set()
+    result: list[OverPassWay] = []
+    for wid in related_ids:
+        if wid in seen:
+            continue
+        seen.add(wid)
+        w = way_by_id.get(wid)
+        if not w or not getattr(w, "nodes", None):
+            continue
+        nodes = [node_by_id[n] for n in w.nodes]
+        if not nodes or len(nodes) < 2:
+            continue
+        w.geometry = [Coordinate(lat=n.lat, lon=n.lon) for n in nodes]
+        result.append(w)
+    return result

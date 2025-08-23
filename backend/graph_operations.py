@@ -3,7 +3,7 @@ Graph operations for interchange analysis.
 Separated from data.py for better organization.
 """
 
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from collections.abc import Callable
 
 import networkx as nx
@@ -239,3 +239,65 @@ def get_reverse_topological_order(ramps: list[Ramp]) -> list[Ramp]:
     # Reverse to process downstream ramps first
     topo_order.reverse()
     return [G.nodes[ramp_id]["ramp"] for ramp_id in topo_order]
+
+
+def extract_endpoint_ways(ways: list[Path]) -> list[Path]:
+    """From an unordered set of freeway relation ways, determine begin/end non-motorway_link ways
+    by analyzing connectivity via endpoint nodes. Works across multiple components.
+
+    Note: Access filtering is left to the caller.
+    """
+    way_by_id: dict[int, Path] = {w.id: w for w in ways}
+    # Count how many ways start (outbound) and end (inbound) at each endpoint node
+    node_out_count: Counter[int] = Counter()
+    node_in_count: Counter[int] = Counter()
+    endpoints_by_way: dict[int, tuple[int, int]] = {}
+
+    for w in ways:
+        start = w.nodes[0].id
+        end = w.nodes[-1].id
+        endpoints_by_way[w.id] = (start, end)
+        node_out_count[start] += 1
+        node_in_count[end] += 1
+
+    # Select ways whose start has 0 inbound (no way ends at start)
+    # or whose end has 0 outbound (no way starts at end)
+    result_ids: list[int] = []
+    for wid, (start, end) in endpoints_by_way.items():
+        w = way_by_id[wid]
+        # if is_way_motorway_link(w):
+        #   continue
+        if node_in_count.get(start, 0) == 0 or node_out_count.get(end, 0) == 0:
+            result_ids.append(wid)
+
+    return [way_by_id[i] for i in result_ids if i in way_by_id]
+
+
+def filter_endpoints_by_motorway_link(
+    endpoints: list[Path], motorway_links: list[Path]
+) -> list[Path]:
+    """
+    If an endpoint is connected to a motorway link (via its unique node of a link), drop it.
+    """
+    if not endpoints:
+        return []
+    if not motorway_links:
+        return endpoints
+
+    outgoing_nodes: set[int] = set()
+    incoming_nodes: set[int] = set()
+    for link in motorway_links:
+        if not link.nodes:
+            continue
+        outgoing_nodes.add(link.nodes[0].id)
+        incoming_nodes.add(link.nodes[-1].id)
+
+    def keep(p: Path) -> bool:
+        s, e = p.get_endpoint_nodes()
+        if e.id in outgoing_nodes:
+            return False
+        if s.id in incoming_nodes:
+            return False
+        return True
+
+    return [p for p in endpoints if keep(p)]
