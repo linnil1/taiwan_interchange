@@ -1,4 +1,6 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
+from collections.abc import Iterable
+from itertools import chain
 
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
@@ -35,6 +37,92 @@ from utils import (
     choose_modal_per_group,
     normalize_weigh_station_name,
 )
+
+# ---- Special-case configuration ----
+# Branch isolation: if a branch contains any of these way IDs, make that branch a standalone interchange
+SPECIAL_ISOLATE_BRANCH_WAY_IDS: set[int] = {
+    135638645,  # 南深路出口匝道
+    328852477,  # 環北交流道
+    50893495,  # 環北交流道
+}
+
+# Explicit interchange name overrides when an interchange contains a way ID
+WAY_TO_INTERCHANGE_NAME: dict[int, str] = {
+    534195515: "校前路交流道",
+    247148858: "西螺服務區;西螺交流道",
+    136861416: "高工局",
+    260755985: "田寮地磅站",
+    328852477: "環北交流道",
+    50893495: "環北交流道",
+}
+
+# Ignore specific nodes when extracting names (these should not name interchanges)
+IGNORED_NODE_IDS: set[int] = {1095916940, 623059692}  # 泰安服務區, 濱江街出口
+
+
+def ramp_contains_way(ramps: list[Ramp], way_id: int) -> bool:
+    """Return True if any path in ramp matches the given OSM way id."""
+    return any(p.id == way_id for r in ramps for p in r.paths)
+
+
+def isolate_interchanges_by_branch(
+    interchanges: list[Interchange], isolate_way_ids: set[int]
+) -> list[Interchange]:
+    """
+    If an interchange contains a branch that has any of `isolate_way_ids`, split that branch
+    off into its own interchange. This keeps other branches in the original interchange.
+    """
+    result: list[Interchange] = []
+    new_interchanges: list[Interchange] = []
+
+    for ic in interchanges:
+        # Group ramps by branch_id inside this interchange
+        by_branch: dict[int, list[Ramp]] = defaultdict(list)
+        for r in ic.ramps:
+            by_branch[r.branch_id].append(r)
+
+        # Find branches to isolate
+        branches_to_isolate: list[int] = []
+        for branch_id, ramps in by_branch.items():
+            if any(ramp_contains_way(ramps, way_id) for way_id in isolate_way_ids):
+                branches_to_isolate.append(branch_id)
+
+        if not branches_to_isolate:
+            result.append(ic)
+            continue
+
+        # Keep original interchange with non-isolated branches (if any)
+        kept_ramps: list[Ramp] = [r for r in ic.ramps if r.branch_id not in branches_to_isolate]
+        if kept_ramps:
+            kept_ic = create_interchange_from_ramps(kept_ramps, id=ic.id)
+            kept_ic.name = ic.name
+            result.append(kept_ic)
+
+        # Create standalone interchanges for each isolated branch
+        for b in branches_to_isolate:
+            branch_ramps = by_branch[b]
+            new_ic = create_interchange_from_ramps(branch_ramps, id=0)
+            new_ic.name = ic.name  # will be re-annotated later
+            new_interchanges.append(new_ic)
+
+    # Renumber and return combined list
+    combined = result + new_interchanges
+    return renumber_interchanges(combined)
+
+
+def override_interchange_names_by_way(
+    interchanges: list[Interchange], mapping: dict[int, str] = WAY_TO_INTERCHANGE_NAME
+) -> list[Interchange]:
+    """
+    Override interchange names if they contain any specific way IDs defined in `mapping`.
+    Mutates interchanges in place and also returns the list for convenience.
+    """
+    for ic in interchanges:
+        for way_id, name in mapping.items():
+            if ramp_contains_way(ic.ramps, way_id):
+                ic.name = name
+                break
+    return interchanges
 
 
 def load_and_filter_weigh_stations(use_cache: bool = True) -> list[OverPassWay]:
@@ -167,7 +255,7 @@ def extract_name_from_interchange(ramps: list[Ramp], node_dict: dict[int, OverPa
         for path in ramp.paths:
             for node in path.nodes:
                 osm_node = node_dict.get(node.id)
-                if osm_node and osm_node.tags:
+                if osm_node and osm_node.tags and (osm_node.id not in IGNORED_NODE_IDS):
                     if (
                         osm_node.tags.get("highway") == "motorway_junction"
                         and "name" in osm_node.tags
@@ -273,6 +361,9 @@ def merge_interchanges_by_name(interchanges: list[Interchange]) -> list[Intercha
 
     merged: list[Interchange] = []
     for name, group in name_to_group.items():
+        if name == "Unknown Interchange":
+            merged.extend(group)
+            continue
         if len(group) > 1:
             combined = merge_interchanges(group)
             print(f"Merged interchanges: {name}")
@@ -291,10 +382,7 @@ def renumber_interchanges(interchanges: list[Interchange]) -> list[Interchange]:
 
 def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
     # Calculate bounds from all ramp nodes
-    # Flatten nodes from ramps and calculate bounds using utils.calculate_bounds
-    all_nodes: list[Node] = []
-    for r in ramps:
-        all_nodes.extend(r.list_nodes())
+    all_nodes: Iterable[Node] = chain.from_iterable(ramp.list_nodes() for ramp in ramps)
     bounds = calculate_bounds(all_nodes)
     if not bounds:
         raise ValueError("No valid bounds could be calculated for the interchange")
@@ -305,12 +393,7 @@ def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
         if ramp.destination:
             destinations.update(ramp.destination)
 
-    if destinations:
-        # Take the first few unique destinations
-        interchange_name = f"Interchange to {','.join(destinations)}"
-    else:
-        interchange_name = f"Interchange {id}"
-
+    interchange_name = "Unknown Interchange"
     return Interchange(id=id, name=interchange_name, bounds=bounds, ramps=ramps)
 
 
@@ -558,6 +641,9 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     # Load weigh stations for naming fallback
     weigh_stations = load_and_filter_weigh_stations(use_cache)
 
+    # Apply branch isolation special cases before naming/merging
+    interchanges = isolate_interchanges_by_branch(interchanges, SPECIAL_ISOLATE_BRANCH_WAY_IDS)
+
     # Apply manual tuning for specific interchanges (require annotate name first)
     interchanges = [
         annotate_interchange_name(interchange, node_dict, weigh_stations)
@@ -565,6 +651,10 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     ]
     # Split first, then merge
     interchanges = split_interchanges_by_name_marker(interchanges, distance_threshold=0.001)
+
+    # explicit name overrides by presence of specific way IDs
+    interchanges = override_interchange_names_by_way(interchanges, WAY_TO_INTERCHANGE_NAME)
+
     print(f"After split: {len(interchanges)} interchanges")
     interchanges = merge_interchanges_by_name(interchanges)
     print(f"After merge: {len(interchanges)} interchanges")
@@ -574,6 +664,8 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
         annotate_interchange_name(interchange, node_dict, weigh_stations)
         for interchange in interchanges
     ]
+    interchanges = merge_interchanges_by_name(interchanges)
+    print(f"After merge: {len(interchanges)} interchanges")
     interchanges = [
         annotate_interchange_ramps(interchange, way_dict, node_to_relations, use_cache)
         for interchange in interchanges
