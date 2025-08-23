@@ -16,12 +16,12 @@ from osm import (
     OverPassResponse,
     OverPassWay,
     extract_to_destination,
+    is_way_access,
     load_freeway_routes,
     load_nearby_weigh_stations,
     load_overpass,
     load_provincial_routes,
     load_unknown_end_nodes,
-    is_way_access,
 )
 from path_operations import (
     break_paths_by_endpoints,
@@ -249,34 +249,55 @@ def group_ramps_by_interchange(
     return interchanges
 
 
-def tune_interchange(
-    interchanges: list[Interchange],
+def split_interchanges_by_name_marker(
+    interchanges: list[Interchange], *, distance_threshold: float = 0.001
 ) -> list[Interchange]:
     """
-    Manual tuning of interchanges after initial clustering.
-    Workflow:
-    1. Merge interchanges with identical names
-    2. Split interchanges whose names contain semicolons
+    Split interchanges whose names contain semicolons (';') by re-grouping their ramps.
+
+    Args:
+        interchanges: List of interchanges to process
+        distance_threshold: Threshold passed to group_ramps_by_interchange
+
+    Returns:
+        A new list of interchanges where any semicolon-named entry may be split into multiple.
     """
-
-    interchange_names = defaultdict(list)
-    for interchange in interchanges:
-        interchange_names[interchange.name].append(interchange)
-
-    new_interchanges = []
-    for name, interchanges_group in interchange_names.items():
-        if len(interchanges_group) > 1:
-            merged = merge_interchanges(interchanges_group)
-            new_interchanges.append(merged)
-        elif ";" in name:
-            new_interchanges.extend(group_ramps_by_interchange(interchanges_group[0].ramps, 0.001))
+    result: list[Interchange] = []
+    for ic in interchanges:
+        if ";" in ic.name:
+            print(f"Splitting interchange: {ic.name}")
+            result.extend(group_ramps_by_interchange(ic.ramps, distance_threshold))
         else:
-            new_interchanges.append(interchanges_group[0])
+            result.append(ic)
+    # Renumber after split
+    for i, ic in enumerate(result):
+        ic.id = i + 1
+    return result
 
-    for i, interchange in enumerate(new_interchanges):
-        interchange.id = i + 1
 
-    return new_interchanges
+def merge_interchanges_by_name(interchanges: list[Interchange]) -> list[Interchange]:
+    """
+    Merge interchanges that share the exact same name.
+
+    Returns:
+        A list of interchanges with duplicates (by name) merged.
+    """
+    name_to_group: dict[str, list[Interchange]] = defaultdict(list)
+    for ic in interchanges:
+        name_to_group[ic.name].append(ic)
+
+    merged: list[Interchange] = []
+    for name, group in name_to_group.items():
+        if len(group) > 1:
+            combined = merge_interchanges(group)
+            print(f"Merged interchanges: {name}")
+            merged.append(combined)
+        else:
+            merged.append(group[0])
+    # Renumber after merge
+    for i, ic in enumerate(merged):
+        ic.id = i + 1
+    return merged
 
 
 def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
@@ -576,8 +597,11 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
         annotate_interchange_name(interchange, node_dict, weigh_stations)
         for interchange in interchanges
     ]
-    interchanges = tune_interchange(interchanges)
-    print(f"After tuning: {len(interchanges)} interchanges")
+    # Split first, then merge
+    interchanges = split_interchanges_by_name_marker(interchanges, distance_threshold=0.001)
+    print(f"After split: {len(interchanges)} interchanges")
+    interchanges = merge_interchanges_by_name(interchanges)
+    print(f"After merge: {len(interchanges)} interchanges")
 
     # Annotate interchanges with proper ramp destinations
     # (the interchange is annotated again)
