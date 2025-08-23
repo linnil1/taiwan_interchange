@@ -1,4 +1,3 @@
-import re
 from collections import defaultdict
 
 import numpy as np
@@ -7,42 +6,34 @@ from sklearn.cluster import AgglomerativeClustering
 from graph_operations import (
     assign_branch_ids,
     build_dag_edges,
-    calculate_distance,
     connect_ramps_by_nodes,
     contract_paths_to_ramps,
     get_reverse_topological_order,
 )
-from models import Bounds, Interchange, Node, Path, Ramp, Relation
+from models import Interchange, Node, Ramp, Relation
 from osm import (
     OverPassNode,
     OverPassResponse,
     OverPassWay,
     extract_to_destination,
-    is_node_traffic_light,
     load_freeway_routes,
     load_nearby_weigh_stations,
     load_overpass,
     load_provincial_routes,
     load_unknown_end_nodes,
 )
+from path_operations import (
+    break_paths_by_endpoints,
+    break_paths_by_traffic_lights,
+    filter_way_by_access,
+    process_single_path,
+)
 from persistence import save_interchanges
-
-
-def normalize_weigh_station_name(station_name: str) -> str:
-    """
-    Normalize weigh station names by removing directional suffixes.
-
-    Examples:
-    - "頭城南向地磅站" -> "頭城地磅站"
-    - "xxx向地磅站" -> "xxx地磅站"
-    """
-
-    # Pattern to match directional suffixes like "南向", "北向", "東向", "西向" before "地磅站"
-    pattern = r"(.+?)[東西南北]向地磅站$"
-    match = re.match(pattern, station_name)
-    if match:
-        return match.group(1) + "地磅站"
-    return station_name
+from utils import (
+    calculate_bounds,
+    calculate_distance,
+    normalize_weigh_station_name,
+)
 
 
 def load_and_filter_weigh_stations(use_cache: bool = True) -> list[OverPassWay]:
@@ -58,99 +49,6 @@ def load_and_filter_weigh_stations(use_cache: bool = True) -> list[OverPassWay]:
     weigh_stations = [ws for ws in weigh_stations if ws.tags.get("name") and ws.geometry]
     print(f"Found {len(weigh_stations)} weigh stations")
     return weigh_stations
-
-
-def calculate_bounds(ramps: list[Ramp]) -> Bounds | None:
-    """Calculate min/max lat/lng from list of ramps"""
-    if not ramps:
-        return None
-
-    # Extract all coordinates from all ramps using the new method
-    lats = []
-    lons = []
-    for ramp in ramps:
-        nodes = ramp.list_nodes()
-        lats.extend(node.lat for node in nodes)
-        lons.extend(node.lng for node in nodes)
-
-    if not lats:
-        return None
-
-    return Bounds(min_lat=min(lats), max_lat=max(lats), min_lng=min(lons), max_lng=max(lons))
-
-
-def process_single_path(overpass_way: OverPassWay) -> Path:
-    """Process a single OSM way into a Path object"""
-    assert overpass_way.geometry, "Way geometry is empty"
-    assert overpass_way.nodes, "Way nodes are empty"
-    assert len(overpass_way.geometry) == len(overpass_way.nodes), (
-        "Geometry and nodes length mismatch"
-    )
-
-    # Convert geometry to node format
-    nodes = []
-    for coord, node_id in zip(overpass_way.geometry, overpass_way.nodes):
-        nodes.append(Node(lat=coord.lat, lng=coord.lng, id=node_id))
-
-    way_id = overpass_way.id
-
-    return Path(id=way_id, part=0, nodes=nodes)
-
-
-def break_paths_at_connections(paths: list[Path], node_dict: dict[int, OverPassNode]) -> list[Path]:
-    """Break paths when internal nodes connect to endpoints of other paths, and mark paths with traffic lights"""
-    if not paths:
-        return []
-
-    # Collect all endpoint nodes (first and last nodes of each path)
-    endpoint_nodes = set()
-    for path in paths:
-        if path.nodes:
-            endpoint_nodes.add(path.nodes[0].id)  # First node
-            endpoint_nodes.add(path.nodes[-1].id)  # Last node
-
-    broken_paths = []
-
-    for path in paths:
-        if not path.nodes or len(path.nodes) <= 2:
-            # Don't break paths with 2 or fewer nodes
-            broken_paths.append(path)
-            continue
-
-        # Find internal nodes that are endpoints of other paths
-        break_points = []
-        for i, node in enumerate(path.nodes):
-            if i > 0 and i < len(path.nodes) - 1:  # Internal node (not first or last)
-                if node.id in endpoint_nodes or is_node_traffic_light(node_dict.get(node.id)):
-                    break_points.append(i)
-
-        if not break_points:
-            # No breaking needed
-            broken_paths.append(path)
-        else:
-            # Break the path at the identified points
-            part_num = 0
-            start_idx = 0
-
-            for break_idx in [*break_points, len(path.nodes)]:
-                # Create a path segment from start_idx to break_idx (inclusive)
-                segment_nodes = path.nodes[start_idx : break_idx + 1]
-                assert len(segment_nodes) >= 2  # Only create if it has at least 2 nodes
-
-                broken_path = Path(
-                    id=path.id,
-                    part=part_num,
-                    nodes=segment_nodes,
-                    ended=is_node_traffic_light(node_dict.get(segment_nodes[-1].id)),
-                )
-                broken_paths.append(broken_path)
-                part_num += 1
-                start_idx = break_idx  # Start next segment from the break point
-
-    return broken_paths
-
-
-## connect_paths moved to graph_operations.py as contract_paths_to_ramps and connect_ramps_by_nodes
 
 
 def annotate_ramp_by_way(ramp: Ramp, way_dict: dict[int, OverPassWay]) -> list[str]:
@@ -383,7 +281,11 @@ def tune_interchange(
 
 def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
     # Calculate bounds from all ramp nodes
-    bounds = calculate_bounds(ramps)
+    # Flatten nodes from ramps and calculate bounds using utils.calculate_bounds
+    all_nodes: list[Node] = []
+    for r in ramps:
+        all_nodes.extend(r.list_nodes())
+    bounds = calculate_bounds(all_nodes)
     if not bounds:
         raise ValueError("No valid bounds could be calculated for the interchange")
 
@@ -629,7 +531,7 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     print("Getting Overpass data...")
     response = load_overpass(use_cache)
     ways = response.list_ways()
-    ways = [i for i in ways if i.tags.get("access") not in ["private", "no", "emergency"]]
+    ways = [i for i in ways if filter_way_by_access(i)]
     nodes = response.list_nodes()
     print(f"Found {len(ways)} motorway links and {len(nodes)} motorway junctions")
 
@@ -652,7 +554,8 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     print(f"Processed {len(paths)} paths")
 
     # Group paths into ramps
-    paths = break_paths_at_connections(paths, node_dict)
+    paths = break_paths_by_endpoints(paths)
+    paths = break_paths_by_traffic_lights(paths, node_dict)
     ramps = contract_paths_to_ramps(paths)
     ramps = connect_ramps_by_nodes(ramps)
     # Build DAG view without altering full graph

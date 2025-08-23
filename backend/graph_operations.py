@@ -3,13 +3,13 @@ Graph operations for interchange analysis.
 Separated from data.py for better organization.
 """
 
-import math
 from collections import defaultdict, deque
 from collections.abc import Callable
 
 import networkx as nx
 
 from models import Path, Ramp
+from path_operations import can_paths_connect
 
 
 class DisjointSet:
@@ -49,8 +49,7 @@ def contract_paths_to_ramps(
     if not paths:
         return []
     if can_connect is None:
-        # default: allow connection if the current path is not ended
-        can_connect = lambda a, b: not a.ended  # noqa: E731
+        can_connect = can_paths_connect
 
     # Build adjacency of paths by endpoint node ids
     outgoing_paths: defaultdict[int, list[Path]] = defaultdict(list)
@@ -230,23 +229,3 @@ def get_reverse_topological_order(ramps: list[Ramp]) -> list[Ramp]:
     # Reverse to process downstream ramps first
     topo_order.reverse()
     return [G.nodes[ramp_id]["ramp"] for ramp_id in topo_order]
-
-
-def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """
-    Calculate the distance between two coordinates using the Haversine formula
-    Returns distance in kilometers
-    """
-    # Convert latitude and longitude from degrees to radians
-    lat1, lng1, lat2, lng2 = map(math.radians, [lat1, lng1, lat2, lng2])
-
-    # Haversine formula
-    dlat = lat2 - lat1
-    dlng = lng2 - lng1
-    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlng / 2) ** 2
-    c = 2 * math.asin(math.sqrt(a))
-
-    # Radius of Earth in kilometers
-    r = 6371
-
-    return c * r
