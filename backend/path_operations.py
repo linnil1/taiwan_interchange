@@ -88,27 +88,8 @@ def break_paths_by_traffic_lights(
     light_ids: set[int] = {nid for nid, v in is_light.items() if v}
 
     # First split using the generic splitter
-    segments = break_paths_by_nodes(paths, light_ids)
+    paths = break_paths_by_nodes(paths, light_ids)
 
-    # Ensure unique parts per original path id and set ended
-    next_part: dict[int, int] = {}
-    results: list[Path] = []
-    for seg in segments:
-        pid = seg.id
-        part_idx = next_part.setdefault(pid, 0)
-        ended = is_light.get(seg.nodes[-1].id, False) if seg.nodes else False
-        results.append(Path(id=pid, part=part_idx, nodes=seg.nodes, ended=ended))
-        next_part[pid] = part_idx + 1
-    return results
-
-
-def break_paths_at_connections(paths: list[Path], node_dict: dict[int, OverPassNode]) -> list[Path]:
-    """Split by endpoints first, then by traffic lights."""
-    paths = break_paths_by_endpoints(paths)
-    return break_paths_by_traffic_lights(paths, node_dict)
-
-
-def filter_way_by_access(way: OverPassWay) -> bool:
-    """Return True if the way is allowed by access tag."""
-    access = way.tags.get("access") if isinstance(way.tags, dict) else None
-    return access not in ["private", "no", "emergency", "permissive"]
+    for path in paths:
+        path.ended = is_light.get(path.nodes[-1].id, False) if path.nodes else False
+    return paths

@@ -21,11 +21,11 @@ from osm import (
     load_overpass,
     load_provincial_routes,
     load_unknown_end_nodes,
+    is_way_access,
 )
 from path_operations import (
     break_paths_by_endpoints,
     break_paths_by_traffic_lights,
-    filter_way_by_access,
     process_single_path,
 )
 from persistence import save_interchanges
@@ -531,7 +531,7 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     print("Getting Overpass data...")
     response = load_overpass(use_cache)
     ways = response.list_ways()
-    ways = [i for i in ways if filter_way_by_access(i)]
+    ways = [i for i in ways if is_way_access(i)]
     nodes = response.list_nodes()
     print(f"Found {len(ways)} motorway links and {len(nodes)} motorway junctions")
 
@@ -564,7 +564,6 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
 
     # Annotate branch/component ids on paths for downstream grouping
     ramps = assign_branch_ids(ramps)
-
     # Group ramps into interchanges
     interchanges = group_ramps_by_interchange(ramps, 0.005)
     print(f"Identified {len(interchanges)} interchanges")

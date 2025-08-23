@@ -122,16 +122,26 @@ def connect_ramps_by_nodes(ramps: list[Ramp]) -> list[Ramp]:
     # Build temporary graph with NetworkX
     G = nx.DiGraph()
     for r in ramps:
-        G.add_node(r.id)
-
-    for r in ramps:
         s, e = r.get_endpoint_nodes()
-        G.add_edge(s.id, e.id)
+        r.to_ramps = []
+        r.from_ramps = []
+        G.add_edge(s.id, e.id, ramp=r)
 
-    # Write back edges
+    for node_id in G.nodes:
+        out_ramps: list[Ramp] = [data.get("ramp") for _, _, data in G.out_edges(node_id, data=True)]
+        in_ramps: list[Ramp] = [data.get("ramp") for _, _, data in G.in_edges(node_id, data=True)]
+
+        # Connect every incoming ramp to every outgoing ramp through this node
+        for in_r in in_ramps:
+            for out_r in out_ramps:
+                in_r.to_ramps.append(out_r.id)
+                out_r.from_ramps.append(in_r.id)
+
+    # Deduplicate and sort for stability
     for r in ramps:
-        r.to_ramps = sorted(list(G.successors(r.id)))
-        r.from_ramps = sorted(list(G.predecessors(r.id)))
+        r.to_ramps = sorted(set(r.to_ramps))
+        r.from_ramps = sorted(set(r.from_ramps))
+
     return ramps
 
 

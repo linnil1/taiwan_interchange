@@ -233,6 +233,11 @@ def load_nearby_weigh_stations(use_cache: bool = True) -> OverPassResponse:
     )
 
 
+def load_overpass(use_cache: bool = True) -> OverPassResponse:
+    """Load Overpass API response from cache file"""
+    return load_or_fetch_overpass("overpass_cache.json", query_overpass_api, use_cache=use_cache)
+
+
 def extract_to_destination(way: OverPassWay) -> list[str]:
     """Extract destination from way tags - retrieve all three tags"""
     destinations = []
@@ -266,6 +271,7 @@ def is_node_traffic_light(node: OverPassNode | None) -> bool:
     return False
 
 
-def load_overpass(use_cache: bool = True) -> OverPassResponse:
-    """Load Overpass API response from cache file"""
-    return load_or_fetch_overpass("overpass_cache.json", query_overpass_api, use_cache=use_cache)
+def is_way_access(way: OverPassWay) -> bool:
+    """Return True if the way is allowed by access tag."""
+    access = way.tags.get("access") if isinstance(way.tags, dict) else None
+    return access not in ["private", "no", "emergency", "permissive"]
