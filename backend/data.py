@@ -5,9 +5,11 @@ import numpy as np
 from sklearn.cluster import AgglomerativeClustering
 
 from graph_operations import (
+    assign_branch_ids,
+    build_dag_edges,
     calculate_distance,
-    get_begin_nodes,
-    get_connected_ramps,
+    connect_ramps_by_nodes,
+    contract_paths_to_ramps,
     get_reverse_topological_order,
 )
 from models import Bounds, Interchange, Node, Path, Ramp, Relation
@@ -148,125 +150,7 @@ def break_paths_at_connections(paths: list[Path], node_dict: dict[int, OverPassN
     return broken_paths
 
 
-def connect_paths(paths: list[Path]) -> list[Ramp]:
-    """
-    Connect paths into ramps by contracting nodes with exactly one incoming and one outgoing edge.
-
-    Args:
-        paths: List of Path objects to connect
-
-    Returns:
-        List of Ramp objects with proper connectivity
-
-    Special case: If path.ended is True, do not connect further
-    """
-    if not paths:
-        return []
-
-    # Step 1: Build adjacency structures
-    outgoing_paths: defaultdict[int, list[Path]] = defaultdict(list)
-    incoming_paths: defaultdict[int, list[Path]] = defaultdict(list)
-    for path in paths:
-        start_node, end_node = path.get_endpoint_nodes()
-        outgoing_paths[start_node.id].append(path)
-        incoming_paths[end_node.id].append(path)
-
-    # Step 2: Find all begin nodes
-    begin_node_ids = get_begin_nodes(paths)
-
-    # Step 3: Initialize data structures
-    visited_nodes: set[int] = set()
-    ramps: list[Ramp] = []
-    node_to_ramps: dict[int, list[Ramp]] = {}
-    circular_ramps: list[Ramp] = []
-
-    # Step 5: Contract paths into ramps
-    def extend_paths(path: Path) -> list[Path]:
-        """Extend a path by following connections where possible"""
-        extended_paths = [path]
-        current_path = path
-        last_node_id = current_path.get_endpoint_nodes()[1].id
-
-        while True:
-            outgoing_path_list = outgoing_paths.get(last_node_id, [])
-
-            # current path not ended
-            # AND the node has only 1 in and 1 out
-            if (
-                len(outgoing_path_list) != 1
-                or current_path.ended
-                or len(incoming_paths.get(last_node_id, [])) != 1
-            ):
-                break
-
-            next_path = outgoing_path_list[0]
-            extended_paths.append(next_path)
-            visited_nodes.add(last_node_id)
-            current_path = next_path
-            last_node_id = next_path.get_endpoint_nodes()[1].id
-
-        return extended_paths
-
-    def dfs_traverse_node(start_node_id: int) -> list[Ramp] | None:
-        """DFS to collect all paths that can be connected into ramps"""
-        # Check if already processed
-        if start_node_id in visited_nodes:
-            return node_to_ramps.get(start_node_id)
-
-        visited_nodes.add(start_node_id)
-        current_ramps: list[Ramp] = []
-
-        # Process all outgoing paths from this node
-        for path in outgoing_paths.get(start_node_id, []):
-            # Extend the path as far as possible
-            extended_path_list = extend_paths(path)
-
-            # Create a ramp from the extended paths
-            current_ramp = Ramp(
-                id=len(ramps),
-                paths=extended_path_list,
-            )
-            current_ramps.append(current_ramp)
-            ramps.append(current_ramp)
-
-            # Get the end node of this ramp for further traversal
-            end_node_id = extended_path_list[-1].get_endpoint_nodes()[1].id
-
-            # Continue DFS from the end node
-            next_ramps = dfs_traverse_node(end_node_id)
-
-            if next_ramps is None:
-                # Hit a circular reference - mark for later processing
-                circular_ramps.append(current_ramp)
-            else:
-                # Connect current ramp to next ramps
-                for next_ramp in next_ramps:
-                    current_ramp.to_ramps.append(next_ramp.id)
-                    next_ramp.from_ramps.append(current_ramp.id)
-
-        node_to_ramps[start_node_id] = current_ramps
-        return current_ramps
-
-    # Step 4: Start DFS from each begin node
-    for node_id in begin_node_ids:
-        dfs_traverse_node(node_id)
-
-    # Step 6: Handle circular references
-    if circular_ramps:
-        print(
-            f"Circular ramps found: {len(circular_ramps)} ramps with IDs {[ramp.id for ramp in circular_ramps]}"
-        )
-
-        for ramp in circular_ramps:
-            end_node_id = ramp.get_endpoint_nodes()[1].id
-            next_ramps = node_to_ramps.get(end_node_id, [])
-
-            for next_ramp in next_ramps:
-                # Only add incoming connection to prevent cycles in to_ramps
-                # ramp.to_ramps.append(nramp.id)
-                next_ramp.from_ramps.append(ramp.id)
-
-    return ramps
+## connect_paths moved to graph_operations.py as contract_paths_to_ramps and connect_ramps_by_nodes
 
 
 def annotate_ramp_by_way(ramp: Ramp, way_dict: dict[int, OverPassWay]) -> list[str]:
@@ -297,9 +181,8 @@ def annotate_ramp_by_relation(ramp: Ramp, node_to_relations: dict[int, Relation]
 
 def annotate_ramps_by_propagating(ramps: list[Ramp]) -> list[Ramp]:
     """
-    Propagate destination information upstream using reverse topological order.
-    Uses the refactored get_reverse_topological_order function.
-    Since connect_paths ensures no cycles, we don't need fallback handling.
+    Propagate destination information upstream using reverse topological order on the DAG view.
+    Uses get_reverse_topological_order (built from dag_to edges).
     """
     if not ramps:
         return ramps
@@ -309,10 +192,10 @@ def annotate_ramps_by_propagating(ramps: list[Ramp]) -> list[Ramp]:
     # Get topological order (downstream to upstream) using refactored function
     ramps = get_reverse_topological_order(ramps)
 
-    # Process ramps in reverse topological order
+    # Process ramps in reverse topological order (DAG-based)
     for ramp in ramps:
         # Collect destinations from all downstream ramps
-        for downstream_ramp_id in ramp.to_ramps:
+        for downstream_ramp_id in ramp.dag_to:
             downstream_ramp = ramp_dict.get(downstream_ramp_id)
             if downstream_ramp:
                 ramp.destination.extend(downstream_ramp.destination)
@@ -412,13 +295,14 @@ def group_ramps_by_interchange(
     if not ramps:
         return []
 
-    # Collect all nodes from all ramps
+    # Collect all nodes from all ramps, grouped by branch_id (precomputed components)
     all_nodes = []
-    # cramps = connected_ramps
-    cramps = get_connected_ramps(ramps)
+    branch_to_ramps: dict[int, list[Ramp]] = defaultdict(list)
+    for r in ramps:
+        branch_to_ramps[r.branch_id].append(r)
     node_to_cramps = []
 
-    for key, ramps_group in enumerate(cramps):
+    for key, ramps_group in enumerate(branch_to_ramps.values()):
         for ramp in ramps_group:
             for node in ramp.list_nodes():
                 node_coord = [node.lng, node.lat]
@@ -458,7 +342,9 @@ def group_ramps_by_interchange(
         cluster_ramps = []
         for cramp_id, cluster_label in cramp_cluster_assignment.items():
             if cluster_label == cluster_label_target:
-                cluster_ramps.extend(cramps[cramp_id])
+                # Map cramp_id back into the branch_to_ramps order we enumerated above
+                branch_id = list(branch_to_ramps.keys())[cramp_id]
+                cluster_ramps.extend(branch_to_ramps[branch_id])
         if cluster_ramps:
             interchange = create_interchange_from_ramps(cluster_ramps, len(interchanges) + 1)
             interchanges.append(interchange)
@@ -603,9 +489,11 @@ def get_interchange_and_ramp_name_by_weight_stations(
     if not ramp_to_station:
         return "", {}
 
-    # Fix max occur and assign it
-    cramps = get_connected_ramps(interchange.ramps)
-    for ramps in cramps:
+    # Fix max occur and assign it using branch_id groupings
+    branch_to_ramps: dict[int, list[Ramp]] = defaultdict(list)
+    for r in interchange.ramps:
+        branch_to_ramps[r.branch_id].append(r)
+    for ramps in branch_to_ramps.values():
         station_name_count = defaultdict(int)
         for ramp in ramps:
             if ramp.id in ramp_to_station:
@@ -765,8 +653,14 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
 
     # Group paths into ramps
     paths = break_paths_at_connections(paths, node_dict)
-    ramps = connect_paths(paths)
+    ramps = contract_paths_to_ramps(paths)
+    ramps = connect_ramps_by_nodes(ramps)
+    # Build DAG view without altering full graph
+    ramps = build_dag_edges(ramps)
     print(f"Grouped into {len(ramps)} ramps")
+
+    # Annotate branch/component ids on paths for downstream grouping
+    ramps = assign_branch_ids(ramps)
 
     # Group ramps into interchanges
     interchanges = group_ramps_by_interchange(ramps, 0.005)

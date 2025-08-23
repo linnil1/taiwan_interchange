@@ -35,7 +35,9 @@ class Ramp(BaseModel):
     destination: list[str] = []
     from_ramps: list[int] = []  # IDs of ramps that connect to this ramp
     to_ramps: list[int] = []  # IDs of ramps that this ramp connects to
+    dag_to: list[int] = []  # DAG-only downstream edges (subset of to_ramps)
     paths: list[Path]
+    branch_id: int = -1  # weakly connected component id assigned after graph build
 
     def list_nodes(self) -> list[Node]:
         """Get all nodes from all paths in this ramp"""
