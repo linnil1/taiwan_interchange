@@ -14,7 +14,7 @@ from graph_operations import (
     filter_endpoints_by_motorway_link,
     get_reverse_topological_order,
 )
-from models import Interchange, Node, Ramp, Relation
+from models import Interchange, Node, Ramp
 from osm import (
     OverPassWay,
     load_freeway_routes,
@@ -37,6 +37,8 @@ from path_operations import (
 )
 from persistence import save_interchanges
 from relation_operations import (
+    NodeRelationMap,
+    WayRelationMap,
     build_weigh_way_relations,
     extract_ramp_name_by_end_node_relation,
     extract_ramp_name_by_node_relation,
@@ -219,9 +221,9 @@ def annotate_ramps_by_query_unknown(
 
 def annotate_ramp(
     ramp: Ramp,
-    way_to_relations: dict[int, Relation] | None = None,
-    node_to_relations: dict[int, Relation] | None = None,
-    weigh_way_to_relations: dict[int, Relation] | None = None,
+    way_to_relations: WayRelationMap | None = None,
+    node_to_relations: NodeRelationMap | None = None,
+    weigh_way_to_relations: WayRelationMap | None = None,
 ) -> Ramp:
     """Annotate a single ramp with destinations using priority:
     1) end-node relation; 2) weigh-station way relation; 3) generic way relation.
@@ -376,8 +378,8 @@ def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
 
 def annotate_interchange_name(
     interchange: Interchange,
-    junction_node_rel: dict[int, Relation],
-    weigh_way_rel: dict[int, Relation],
+    junction_node_rel: NodeRelationMap,
+    weigh_way_rel: WayRelationMap,
 ) -> Interchange:
     """
     Annotate single interchange with proper name based on motorway_junction nodes
@@ -403,9 +405,9 @@ def annotate_interchange_name(
 
 def annotate_interchange_ramps(
     interchange: Interchange,
-    way_to_relations: dict[int, Relation] | None = None,
-    node_to_relations: dict[int, Relation] | None = None,
-    weigh_way_to_relations: dict[int, Relation] | None = None,
+    way_to_relations: WayRelationMap | None = None,
+    node_to_relations: NodeRelationMap | None = None,
+    weigh_way_to_relations: WayRelationMap | None = None,
     use_cache: bool = True,
 ) -> Interchange:
     """Annotate all ramps in an interchange with destinations."""
@@ -434,26 +436,24 @@ def annotate_interchange_ramps(
     )
 
 
-def build_highway_relation(use_cache: bool = True) -> dict[int, Relation]:
+def build_highway_relation(use_cache: bool = True) -> NodeRelationMap:
     """Build mapping from node id to road relation objects (freeway, provincial)."""
-    # Load the responses
-    response_freeway = load_freeway_routes(use_cache)
-    response_provincial = load_provincial_routes(use_cache)
-
     # Process each type and combine results with priority: freeway > provincial
     node_to_relations = {}
 
-    # Process provincial first (lower priority)
+    # Process provincial (low priority)
+    response_provincial = load_provincial_routes(use_cache)
     provincial_rel = process_relations_mapping(response_provincial)
     provincial_mapping = wrap_relation_to_node_relation(provincial_rel, "provincial")
     node_to_relations.update(provincial_mapping)
 
-    # Process freeway second (higher priority, will overwrite provincial)
+    # Process freeway
+    response_freeway = load_freeway_routes(use_cache)
     freeway_rel = process_relations_mapping(response_freeway)
     freeway_mapping = wrap_relation_to_node_relation(freeway_rel, "freeway")
     node_to_relations.update(freeway_mapping)
 
-    return node_to_relations
+    return NodeRelationMap(node_to_relations)
 
 
 def generate_interchanges_json(use_cache: bool = True) -> bool:
@@ -484,7 +484,7 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     # Create dictionaries / mappings for efficient lookup
     node_dict = {node.id: node for node in nodes}
     way_to_relations = wrap_ways_as_relation(ways, road_type="way")
-    junction_node_rel = wrap_junction_name_relation(node_dict)
+    junction_node_rel = wrap_junction_name_relation(node_dict, IGNORED_NODE_IDS)
     paths = [process_single_path(way) for way in ways]
     print(f"Processed {len(paths)} paths")
 
@@ -500,46 +500,54 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     paths = break_paths_by_traffic_lights(paths, node_dict)
     ramps = contract_paths_to_ramps(paths)
     ramps = connect_ramps_by_nodes(ramps)
-    # Build DAG view without altering full graph
     ramps = build_dag_edges(ramps)
+    ramps = assign_branch_ids(ramps)
     print(f"Grouped into {len(ramps)} ramps")
 
-    # Annotate branch/component ids on paths for downstream grouping
-    ramps = assign_branch_ids(ramps)
     # Group ramps into interchanges
     interchanges = group_ramps_to_interchange(ramps, 0.005)
     print(f"Identified {len(interchanges)} interchanges")
-
-    # Load weigh stations for naming fallback
-    weigh_stations = load_and_filter_weigh_stations(use_cache)
-
-    # Apply branch isolation special cases before naming/merging
     interchanges = isolate_interchanges_by_branch(interchanges, SPECIAL_ISOLATE_BRANCH_WAY_IDS)
 
+    # Load weigh stations for naming fallback
+    # Build a global mapping: way_id -> weigh-station relation
+    weigh_stations = load_and_filter_weigh_stations(use_cache)
+    print(f"Loaded {len(weigh_stations)} weigh stations")
+    weigh_way_rel = build_weigh_way_relations(ways, weigh_stations)
+
+    # Build junction relation mapping once and use for naming
     # Apply manual tuning for specific interchanges (require annotate name first)
     interchanges = [
-        annotate_interchange_name(interchange, node_dict, weigh_stations)
+        annotate_interchange_name(interchange, junction_node_rel, weigh_way_rel)
         for interchange in interchanges
     ]
     # Split first, then merge
     interchanges = split_interchanges_by_name_marker(interchanges, distance_threshold=0.001)
-
-    # explicit name overrides by presence of specific way IDs
     interchanges = override_interchange_names_by_way(interchanges, WAY_TO_INTERCHANGE_NAME)
-
-    print(f"After split: {len(interchanges)} interchanges")
     interchanges = merge_interchanges_by_name(interchanges)
-    print(f"After merge: {len(interchanges)} interchanges")
 
     # Annotate interchange again, and annotate ramp
     interchanges = [
-        annotate_interchange_name(interchange, node_dict, weigh_stations)
+        annotate_interchange_name(interchange, junction_node_rel, weigh_way_rel)
         for interchange in interchanges
     ]
     interchanges = merge_interchanges_by_name(interchanges)
     print(f"After merge: {len(interchanges)} interchanges")
+
+    print("Building node to relation mapping...")
+    node_to_relations = build_highway_relation(use_cache)
+    print(f"Mapped {len(node_to_relations)} nodes to road relations")
+
+    # We already have weigh_way_rel for all ways
+    print(f"Prepared {len(weigh_way_rel)} weigh-station relations (way-based)")
     interchanges = [
-        annotate_interchange_ramps(interchange, way_dict, node_to_relations, use_cache)
+        annotate_interchange_ramps(
+            interchange,
+            way_to_relations=way_to_relations,
+            node_to_relations=node_to_relations,
+            weigh_way_to_relations=weigh_way_rel,
+            use_cache=use_cache,
+        )
         for interchange in interchanges
     ]
     print(f"Annotated {len(interchanges)} interchanges")
