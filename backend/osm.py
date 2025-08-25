@@ -9,7 +9,10 @@ from pydantic import BaseModel, Field
 
 
 class Coordinate(BaseModel):
-    """Represents a geographical coordinate"""
+    """Represents a geographical coordinate (lat/lon).
+
+    Overpass uses the key name "lon"; we expose it as `lng` via an alias.
+    """
 
     lat: float
     lng: float = Field(alias="lon")  # Map API's "lon" to our "lng"
@@ -19,7 +22,7 @@ class Coordinate(BaseModel):
 
 
 class OverPassNode(BaseModel):
-    """Represents a raw OverPass API node"""
+    """Represents a raw OverPass API node as returned by Overpass."""
 
     type: Literal["node"]
     id: int
@@ -29,7 +32,7 @@ class OverPassNode(BaseModel):
 
 
 class OverPassWay(BaseModel):
-    """Represents a raw OverPass API way"""
+    """Represents a raw OverPass API way as returned by Overpass."""
 
     type: Literal["way"]
     id: int
@@ -39,7 +42,7 @@ class OverPassWay(BaseModel):
 
 
 class OverPassRelationMember(BaseModel):
-    """Represents a member of an OverPass API relation"""
+    """Represents a member of an OverPass API relation."""
 
     type: Literal["node", "way", "relation"]
     ref: int
@@ -47,7 +50,7 @@ class OverPassRelationMember(BaseModel):
 
 
 class OverPassRelation(BaseModel):
-    """Represents a raw OverPass API relation"""
+    """Represents a raw OverPass API relation."""
 
     type: Literal["relation"]
     id: int
@@ -56,7 +59,7 @@ class OverPassRelation(BaseModel):
 
 
 class OverPassResponse(BaseModel):
-    """Represents a complete OverPass API response"""
+    """Represents a complete OverPass API response and helpers to filter elements."""
 
     version: float
     generator: str
@@ -74,7 +77,7 @@ class OverPassResponse(BaseModel):
 
 
 def query_overpass_api() -> dict | None:
-    """Query Overpass API for motorway links in Tainan"""
+    """Query Overpass API for motorway links and junction nodes in Taiwan."""
     overpass_url = "http://overpass-api.de/api/interpreter"
 
     query = """
@@ -94,7 +97,7 @@ def query_overpass_api() -> dict | None:
 
 
 def query_freeway_routes() -> dict | None:
-    """Query Overpass API for freeway routes in Taiwan"""
+    """Query Overpass API for freeway route relations in Taiwan."""
     overpass_url = "http://overpass-api.de/api/interpreter"
 
     query = """
@@ -113,7 +116,7 @@ def query_freeway_routes() -> dict | None:
 
 
 def query_provincial_routes() -> dict | None:
-    """Query Overpass API for provincial routes in Taiwan"""
+    """Query Overpass API for provincial route relations in Taiwan."""
     overpass_url = "http://overpass-api.de/api/interpreter"
 
     query = """
@@ -132,7 +135,7 @@ def query_provincial_routes() -> dict | None:
 
 
 def query_unknown_end_nodes(node_ids: list[int]) -> dict | None:
-    """Query Overpass API for unknown end nodes and their connected ways"""
+    """Query Overpass API for the given nodes and their connected ways (bn)."""
     overpass_url = "http://overpass-api.de/api/interpreter"
 
     # Convert node IDs to comma-separated string
@@ -154,7 +157,7 @@ def query_unknown_end_nodes(node_ids: list[int]) -> dict | None:
 
 
 def query_nearby_weigh_stations() -> dict | None:
-    """Query Overpass API for weigh stations with names ending in '地磅站' in Taiwan"""
+    """Query Overpass API for weigh stations with names ending in '地磅站' in Taiwan."""
     overpass_url = "http://overpass-api.de/api/interpreter"
 
     query = """
@@ -172,7 +175,7 @@ def query_nearby_weigh_stations() -> dict | None:
 
 
 def save_overpass_cache(data: dict, cache_file_path: str) -> bool:
-    """Save Overpass API response to cache file"""
+    """Save Overpass API response to a cache file (JSON)."""
     with open(cache_file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"Saved Overpass data to cache: {cache_file_path}")
@@ -185,7 +188,7 @@ def load_or_fetch_overpass(
     use_cache: bool = True,
 ) -> OverPassResponse:
     """
-    Generic function to load from cache or fetch from API
+    Load a cached Overpass response or fetch and cache it using `fetch_func`.
 
     Args:
         cache_filename: Name of the cache file (without path)
@@ -206,12 +209,12 @@ def load_or_fetch_overpass(
 
 
 def load_freeway_routes(use_cache: bool = True) -> OverPassResponse:
-    """Load freeway routes Overpass API response from cache file"""
+    """Load freeway route relations from cache or Overpass API."""
     return load_or_fetch_overpass("freeway_cache.json", query_freeway_routes, use_cache=use_cache)
 
 
 def load_provincial_routes(use_cache: bool = True) -> OverPassResponse:
-    """Load provincial routes Overpass API response from cache file"""
+    """Load provincial route relations from cache or Overpass API."""
     return load_or_fetch_overpass(
         "provincial_cache.json", query_provincial_routes, use_cache=use_cache
     )
@@ -220,96 +223,19 @@ def load_provincial_routes(use_cache: bool = True) -> OverPassResponse:
 def load_unknown_end_nodes(
     node_ids: list[int], interchange_name: str, use_cache: bool = True
 ) -> OverPassResponse:
-    """Load unknown end nodes Overpass API response from cache file"""
+    """Load selected nodes and their connected ways from cache or Overpass API."""
     cache_filename = f"unknown_cache_{interchange_name.replace(' ', '_')}.json"
     fetch_func = partial(query_unknown_end_nodes, node_ids)
     return load_or_fetch_overpass(cache_filename, fetch_func, use_cache=use_cache)
 
 
 def load_nearby_weigh_stations(use_cache: bool = True) -> OverPassResponse:
-    """Load nearby weigh stations Overpass API response from cache file"""
+    """Load weigh stations in Taiwan from cache or Overpass API."""
     return load_or_fetch_overpass(
         "weigh_stations_cache.json", query_nearby_weigh_stations, use_cache=use_cache
     )
 
 
 def load_overpass(use_cache: bool = True) -> OverPassResponse:
-    """Load Overpass API response from cache file"""
+    """Load motorway_link/junction Overpass response from cache or Overpass API."""
     return load_or_fetch_overpass("overpass_cache.json", query_overpass_api, use_cache=use_cache)
-
-
-def extract_to_destination(way: OverPassWay) -> list[str]:
-    """Extract destination from way tags - retrieve all three tags"""
-    destinations = []
-    tags = way.tags
-
-    # Check for 'exit_to' tag
-    if "exit_to" in tags and tags["exit_to"]:
-        destinations.extend(tags["exit_to"].split(";"))
-
-    # Check for 'destination' tag
-    if "destination" in tags and tags["destination"]:
-        destinations.extend(tags["destination"].split(";"))
-
-    # Check for 'ref' tag
-    if "ref" in tags and tags["ref"] and not destinations:
-        destinations.append(tags["ref"])
-
-    return destinations
-
-
-def is_node_traffic_light(node: OverPassNode | None) -> bool:
-    """Check if a node is a traffic light or similar control node"""
-    if node and node.tags:
-        # Check for traffic control tags
-        return (
-            node.tags.get("highway") == "traffic_signals"
-            or node.tags.get("traffic_signals") is not None
-            or node.tags.get("highway") == "stop"
-            or node.tags.get("stop") is not None
-        )
-    return False
-
-
-def is_way_access(way: OverPassWay) -> bool:
-    """Return True if the way is allowed by access tag."""
-    access = way.tags.get("access") if isinstance(way.tags, dict) else None
-    return access not in ["private", "no", "emergency", "permissive"]
-
-
-def is_way_motorway_link(way: OverPassWay) -> bool:
-    """Return True if the way has highway=motorway_link."""
-    return (way.tags or {}).get("highway") == "motorway_link"
-
-
-def extract_freeway_related_ways(response: OverPassResponse) -> list[OverPassWay]:
-    """Extract all ways that are members of freeway relations from a freeway Overpass response."""
-    if not response.elements:
-        return []
-
-    ways = response.list_ways()
-    nodes = response.list_nodes()
-    way_by_id = {w.id: w for w in ways}
-    node_by_id = {n.id: n for n in nodes}
-    related_ids: list[int] = []
-    for rel in response.list_relations():
-        if rel.tags.get("type") != "route" or "國道一號甲線" in rel.tags.get("name", ""):
-            continue
-        related_ids.extend([m.ref for m in rel.members if m.type == "way"])
-
-    # Preserve order, de-dup, and only return ways that have nodes/geometry
-    seen: set[int] = set()
-    result: list[OverPassWay] = []
-    for wid in related_ids:
-        if wid in seen:
-            continue
-        seen.add(wid)
-        w = way_by_id.get(wid)
-        if not w or not getattr(w, "nodes", None):
-            continue
-        nodes = [node_by_id[n] for n in w.nodes]
-        if not nodes or len(nodes) < 2:
-            continue
-        w.geometry = [Coordinate(lat=n.lat, lon=n.lon) for n in nodes]
-        result.append(w)
-    return result

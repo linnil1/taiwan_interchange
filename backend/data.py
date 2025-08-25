@@ -17,16 +17,20 @@ from graph_operations import (
 from models import Interchange, Node, Ramp, Relation
 from osm import (
     OverPassNode,
-    OverPassResponse,
     OverPassWay,
-    extract_freeway_related_ways,
-    extract_to_destination,
-    is_way_access,
     load_freeway_routes,
     load_nearby_weigh_stations,
     load_overpass,
     load_provincial_routes,
     load_unknown_end_nodes,
+)
+from osm_operations import (
+    extract_freeway_related_ways,
+    extract_to_destination,
+    is_way_access,
+    normalize_weigh_station_name,
+    process_relations_by_way,
+    process_relations_mapping,
 )
 from path_operations import (
     break_paths_by_endpoints,
@@ -39,7 +43,7 @@ from utils import (
     calculate_bounds,
     calculate_distance,
     choose_modal_per_group,
-    normalize_weigh_station_name,
+    ramp_contains_way,
 )
 
 # ---- Special-case configuration ----
@@ -76,17 +80,12 @@ WAY_TO_INTERCHANGE_NAME: dict[int, str] = {
 IGNORED_NODE_IDS: set[int] = {1095916940, 623059692}  # 泰安服務區, 濱江街出口
 
 
-def ramp_contains_way(ramps: list[Ramp], way_id: int) -> bool:
-    """Return True if any path in ramp matches the given OSM way id."""
-    return any(p.id == way_id for r in ramps for p in r.paths)
-
-
 def isolate_interchanges_by_branch(
     interchanges: list[Interchange], isolate_way_ids: set[int]
 ) -> list[Interchange]:
     """
     If an interchange contains a branch that has any of `isolate_way_ids`, split that branch
-    off into its own interchange. This keeps other branches in the original interchange.
+    into its own interchange. Other branches remain with the original interchange.
     """
     result: list[Interchange] = []
     new_interchanges: list[Interchange] = []
@@ -157,7 +156,7 @@ def load_and_filter_weigh_stations(use_cache: bool = True) -> list[OverPassWay]:
 
 
 def annotate_ramp_by_way(ramp: Ramp, way_dict: dict[int, OverPassWay]) -> list[str]:
-    """Annotate ramp with destinations from OSM way dictionary"""
+    """Annotate ramp with destinations by reading OSM way tags from way_dict."""
     all_destinations = []
 
     for path in ramp.paths:
@@ -170,7 +169,7 @@ def annotate_ramp_by_way(ramp: Ramp, way_dict: dict[int, OverPassWay]) -> list[s
 
 
 def annotate_ramp_by_relation(ramp: Ramp, node_to_relations: dict[int, Relation]) -> list[str]:
-    """Annotate ramp with destinations from relation mapping"""
+    """Annotate ramp with destinations using a node->relation mapping."""
     all_destinations = []
 
     # Use the end node to determine destination
@@ -184,8 +183,7 @@ def annotate_ramp_by_relation(ramp: Ramp, node_to_relations: dict[int, Relation]
 
 def annotate_ramps_by_propagating(ramps: list[Ramp]) -> list[Ramp]:
     """
-    Propagate destination information upstream using reverse topological order on the DAG view.
-    Uses get_reverse_topological_order (built from dag_to edges).
+    Propagate destination information upstream using reverse topological order of the DAG.
     """
     if not ramps:
         return ramps
@@ -212,7 +210,7 @@ def annotate_ramps_by_propagating(ramps: list[Ramp]) -> list[Ramp]:
 def annotate_ramps_by_query_unknown(
     ramps: list[Ramp], interchange_name: str, use_cache: bool = True
 ) -> list[Ramp]:
-    """Annotate ramps by querying unknown end nodes for ramps with empty destinations"""
+    """Annotate ramps by querying unknown end nodes for ramps with empty destinations."""
     # Find ramps with empty destinations and collect their end node IDs
     empty_destination_ramps = []
     unknown_node_ids = []
@@ -243,7 +241,7 @@ def annotate_ramp(
     way_dict: dict[int, OverPassWay],
     node_to_relations: dict[int, Relation] | None = None,
 ) -> Ramp:
-    """Annotate single ramp with destinations using multiple methods"""
+    """Annotate a single ramp with destinations using relations and way tags."""
     # original destination: weight station is already set before this func
     all_destinations = ramp.destination
 
@@ -264,7 +262,7 @@ def annotate_ramp(
 
 
 def extract_name_from_interchange(ramps: list[Ramp], node_dict: dict[int, OverPassNode]) -> str:
-    """Extract interchange name from motorway_junction nodes with names in tags"""
+    """Extract interchange name from motorway_junction nodes with name tags."""
     junction_names = []
 
     for ramp in ramps:
@@ -282,7 +280,7 @@ def extract_name_from_interchange(ramps: list[Ramp], node_dict: dict[int, OverPa
 
 
 def merge_interchanges(interchanges: list[Interchange]) -> Interchange:
-    """Merge interchanges"""
+    """Merge multiple interchanges into one, preserving the first's id/name."""
     ramps = []
     for interchange in interchanges:
         ramps.extend(interchange.ramps)
@@ -294,7 +292,7 @@ def merge_interchanges(interchanges: list[Interchange]) -> Interchange:
 def group_ramps_to_interchange(
     ramps: list[Ramp], distance_threshold: float = 0.005
 ) -> list[Interchange]:
-    """Group ramps by interchange using minimum distance clustering with all nodes"""
+    """Group ramps into interchanges using single-linkage clustering over nodes."""
     if not ramps:
         return []
 
@@ -390,7 +388,7 @@ def merge_interchanges_by_name(interchanges: list[Interchange]) -> list[Intercha
 
 
 def renumber_interchanges(interchanges: list[Interchange]) -> list[Interchange]:
-    """Renumber interchanges sequentially starting from 1 and return the list."""
+    """Renumber interchanges sequentially starting from 1."""
     for i, ic in enumerate(interchanges):
         ic.id = i + 1
     return interchanges
@@ -519,7 +517,7 @@ def annotate_interchange_ramps(
     node_to_relations: dict[int, Relation] | None = None,
     use_cache: bool = True,
 ) -> Interchange:
-    """Annotate all ramps in an interchange with destinations"""
+    """Annotate all ramps in an interchange with destinations."""
     # First annotate individual ramps
     ramps = [annotate_ramp(ramp, way_dict, node_to_relations) for ramp in interchange.ramps]
 
@@ -537,63 +535,8 @@ def annotate_interchange_ramps(
     )
 
 
-def process_relations_by_way(response: OverPassResponse, road_type: str) -> dict[int, Relation]:
-    """Process relations by way and return node to relation mapping"""
-    ways = response.list_ways()
-    node_to_relation = {}
-
-    # Process ways
-    for way in ways:
-        if not way.tags.get("name"):
-            continue
-        relation = Relation(name=way.tags["name"], road_type=road_type)
-        for node_id in way.nodes:
-            if node_id in node_to_relation:
-                continue
-            node_to_relation[node_id] = relation
-    return node_to_relation
-
-
-def process_relations_mapping(response: OverPassResponse, road_type: str) -> dict[int, Relation]:
-    """Process relations and return node to relation mapping"""
-    node_to_relations = {}
-    relations = response.list_relations()
-    ways = response.list_ways()
-
-    print(f"Processing {road_type}: {len(relations)} relations, {len(ways)} ways")
-
-    # Create way_id to way mapping for efficiency
-    way_dict = {way.id: way for way in ways}
-
-    for relation in relations:
-        # Skip if no name in tags for relations
-        if not relation.tags or "name" not in relation.tags:
-            continue
-
-        relation_obj = Relation(
-            name=relation.tags["name"],
-            road_type=road_type,
-        )
-
-        # Get all way members from this relation
-        way_ids_in_relation = set()
-        for member in relation.members:
-            if member.type == "way":
-                way_ids_in_relation.add(member.ref)
-
-        # Map all nodes from these ways to this relation object
-        for way_id in way_ids_in_relation:
-            way = way_dict.get(way_id)
-            if way and hasattr(way, "nodes") and way.nodes:
-                for node_id in way.nodes:
-                    if node_id not in node_to_relations:
-                        node_to_relations[node_id] = relation_obj
-
-    return node_to_relations
-
-
 def build_node_to_relation_mapping(use_cache: bool = True) -> dict[int, Relation]:
-    """Build mapping from node ID to road relation objects (freeway, provincial)"""
+    """Build mapping from node id to road relation objects (freeway, provincial)."""
     # Load the responses
     response_freeway = load_freeway_routes(use_cache)
     response_provincial = load_provincial_routes(use_cache)
@@ -613,7 +556,10 @@ def build_node_to_relation_mapping(use_cache: bool = True) -> dict[int, Relation
 
 
 def generate_interchanges_json(use_cache: bool = True) -> bool:
-    """Generate interchanges.json file from Overpass API data"""
+    """
+    The main function:
+    Generate interchanges.json from Overpass API data group them by interchange
+    """
     print("Getting Overpass data...")
     response = load_overpass(use_cache)
     ways = response.list_ways()

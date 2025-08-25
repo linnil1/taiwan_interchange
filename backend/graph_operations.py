@@ -1,6 +1,10 @@
 """
 Graph operations for interchange analysis.
-Separated from data.py for better organization.
+
+This module builds connectivity between path segments (as "ramps"),
+constructs a DAG projection for ordered processing, and provides helpers
+to derive endpoint ways for networks. Logic is separated from data
+loading/assembly for clarity.
 """
 
 from collections import Counter, defaultdict, deque
@@ -13,7 +17,11 @@ from path_operations import can_paths_connect
 
 
 class DisjointSet:
-    """Union-Find (Disjoint Set) with path compression"""
+    """Union-Find (Disjoint Set) with path compression.
+
+    Note: No union-by-rank heuristic is used; it's sufficient for our DAG
+    construction where we only need to detect (undirected) cycles cheaply.
+    """
 
     def __init__(self) -> None:
         self.parent: dict[int, int] = {}
@@ -40,11 +48,14 @@ def contract_paths_to_ramps(
     can_connect: Callable[[Path, Path], bool] | None = None,
 ) -> list[Ramp]:
     """
-    Contract sequential paths into ramps by merging along nodes with exactly
-    one incoming and one outgoing edge (and not crossing a path that is marked ended).
+    Contract sequential paths into ramps by merging along nodes that have
+    exactly one incoming and one outgoing edge.
 
-    Returns a list of Ramp objects with contiguous Path sequences; connectivity
-    (from_ramps/to_ramps) is not set here.
+    Connectivity across ended segments is controlled via the `can_connect`
+    predicate (defaults to disallow if the first path is `ended`).
+
+    Returns a list of Ramp objects with contiguous Path sequences; graph
+    connectivity (from_ramps/to_ramps) is not set here.
     """
     if not paths:
         return []
@@ -112,9 +123,15 @@ def contract_paths_to_ramps(
 
 def connect_ramps_by_nodes(ramps: list[Ramp]) -> list[Ramp]:
     """
-    Build the full graph connectivity (to_ramps/from_ramps) based on shared endpoint nodes.
-    Implemented with NetworkX; result is stored back into Ramp.to_ramps/from_ramps.
-    Does not enforce DAG; use build_dag_edges to compute a DAG projection into dag_to.
+    Build full graph connectivity (to_ramps/from_ramps) based on shared endpoint nodes.
+
+    Implementation detail:
+    - Model each ramp as an edge from its start node to end node.
+    - For each node, connect every incoming-ramp to every outgoing-ramp through
+        that node, updating `to_ramps`/`from_ramps` on the Ramp objects.
+
+    This does not enforce acyclicity; use `build_dag_edges` to compute a DAG
+    projection into `dag_to`.
     """
     if not ramps:
         return []
@@ -147,10 +164,13 @@ def connect_ramps_by_nodes(ramps: list[Ramp]) -> list[Ramp]:
 
 def build_dag_edges(ramps: list[Ramp]) -> list[Ramp]:
     """
-    Create a DAG projection from the full graph, storing edges in dag_to.
-    - Keeps to_ramps/from_ramps untouched (full graph visibility).
-    - Builds dag_to by adding edges in BFS order and skipping any that would form a cycle.
-    - BFS ensures pop-ready behavior naturally; no extra prioritization function is needed.
+    Create a DAG projection from the full graph, storing edges in `dag_to`.
+
+    - Keeps `to_ramps`/`from_ramps` untouched (full graph visibility).
+    - Builds `dag_to` by traversing edges in BFS order and skipping any that would
+        form an (undirected) cycle, detected via a disjoint-set structure.
+    - BFS order provides a stable, pop-ready processing sequence without extra
+        prioritization.
     """
     if not ramps:
         return []
@@ -192,7 +212,7 @@ def build_dag_edges(ramps: list[Ramp]) -> list[Ramp]:
 
 def get_graph_from_ramps_dag(ramps: list[Ramp]) -> nx.DiGraph:
     """
-    Create a directed graph from dag_to edges of ramps (DAG projection).
+    Create a directed graph from `dag_to` edges of ramps (DAG projection).
     """
     G = nx.DiGraph()
     for ramp in ramps:
@@ -205,7 +225,10 @@ def get_graph_from_ramps_dag(ramps: list[Ramp]) -> nx.DiGraph:
 
 def assign_branch_ids(ramps: list[Ramp]) -> list[Ramp]:
     """
-    Assign a weakly-connected component id to each Ramp via ramp.branch_id based on full graph (to_ramps).
+    Assign a weakly-connected component id to each Ramp via `ramp.branch_id`.
+
+    Note: Components are computed on the DAG projection (`dag_to`), treating it
+    as undirected. This groups ramps that are connected within the DAG.
     """
     if not ramps:
         return []
@@ -225,9 +248,10 @@ def assign_branch_ids(ramps: list[Ramp]) -> list[Ramp]:
 
 def get_reverse_topological_order(ramps: list[Ramp]) -> list[Ramp]:
     """
-    Get reverse topological order of ramps for destination propagation using DAG edges.
+    Get reverse topological order of ramps (for downstream-to-upstream propagation)
+    using DAG edges.
 
-    Returns ramps in reverse topological order (downstream to upstream) based on dag_to.
+    Returns ramps in reverse topological order based on `dag_to`.
     """
     if not ramps:
         return []
@@ -242,10 +266,10 @@ def get_reverse_topological_order(ramps: list[Ramp]) -> list[Ramp]:
 
 
 def extract_endpoint_ways(ways: list[Path]) -> list[Path]:
-    """From an unordered set of freeway relation ways, determine begin/end non-motorway_link ways
-    by analyzing connectivity via endpoint nodes. Works across multiple components.
+    """From an unordered set of freeway relation ways, determine begin/end ways by
+    analyzing connectivity via endpoint nodes. Works across multiple components.
 
-    Note: Access filtering is left to the caller.
+    Note: Filtering (e.g., motorway_link or access restrictions) is left to the caller.
     """
     way_by_id: dict[int, Path] = {w.id: w for w in ways}
     # Count how many ways start (outbound) and end (inbound) at each endpoint node
@@ -277,7 +301,10 @@ def filter_endpoints_by_motorway_link(
     endpoints: list[Path], motorway_links: list[Path]
 ) -> list[Path]:
     """
-    If an endpoint is connected to a motorway link (via its unique node of a link), drop it.
+    Drop endpoints that directly connect to a motorway_link's entrance/exit node.
+
+    Heuristic: remove endpoints whose end node matches the first node of any link,
+    or whose start node matches the last node of any link.
     """
     if not endpoints:
         return []

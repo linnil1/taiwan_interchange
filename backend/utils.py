@@ -1,21 +1,22 @@
 """
 Utility functions shared across backend modules.
+
+Includes:
+- Haversine distance calculation
+- Bounds calculation for collections of nodes
+- Modal value selection per group with deterministic tie-breaks
 """
 
 import math
-import re
 from collections import Counter
 from collections.abc import Hashable, Iterable
 from typing import TypeVar
 
-from models import Bounds, Node
+from models import Bounds, Node, Ramp
 
 
 def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """
-    Calculate the distance between two coordinates using the Haversine formula.
-    Returns distance in kilometers.
-    """
+    """Distance (km) between two coordinates using the Haversine formula."""
     # Convert latitude and longitude from degrees to radians
     lat1, lng1, lat2, lng2 = map(math.radians, [lat1, lng1, lat2, lng2])
 
@@ -31,30 +32,13 @@ def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> fl
     return c * r
 
 
-def normalize_weigh_station_name(station_name: str) -> str:
-    """
-    Normalize weigh station names by removing directional suffixes.
-
-    Examples:
-    - "頭城南向地磅站" -> "頭城地磅站"
-    - "xxx向地磅站" -> "xxx地磅站"
-    """
-
-    # Pattern to match directional suffixes like "南向", "北向", "東向", "西向" before "地磅站"
-    pattern = r"(.+?)[東西南北]向地磅站$"
-    match = re.match(pattern, station_name)
-    if match:
-        return match.group(1) + "地磅站"
-    return station_name
-
-
 def calculate_bounds(nodes: Iterable[Node]) -> Bounds | None:
     """Calculate min/max lat/lng from a list of nodes.
 
     Args:
-        nodes: Iterable of Node objects.
+        nodes: Iterable of Node objects
     Returns:
-        Bounds or None if no nodes provided.
+        Bounds or None if no nodes provided
     """
     lats: list[float] = []
     lngs: list[float] = []
@@ -76,12 +60,11 @@ def choose_modal_per_group(group_to_values: dict[int, list[T]]) -> dict[int, T]:
     """Return the modal value for each group with deterministic tie-breaking.
 
     Inputs:
-        - group_to_values: mapping from an integer group key to a list of hashable values.
+        group_to_values: mapping from int group key to list of hashable values
 
     Returns:
-        - dict[int, T]: mapping from group key to its modal value. If a group has
-            multiple values tied for max frequency, the earliest occurrence in the
-            group's input list is chosen.
+        mapping from group key to its modal value. If multiple values tie for max
+        frequency, the earliest occurrence in that group's input list is chosen.
     """
     result: dict[int, T] = {}
     for gid, values in group_to_values.items():
@@ -95,3 +78,8 @@ def choose_modal_per_group(group_to_values: dict[int, list[T]]) -> dict[int, T]:
                 result[gid] = v
                 break
     return result
+
+
+def ramp_contains_way(ramps: list[Ramp], way_id: int) -> bool:
+    """Return True if any path in the given ramps matches the OSM way id."""
+    return any(p.id == way_id for r in ramps for p in r.paths)

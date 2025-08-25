@@ -1,14 +1,20 @@
 """
-Path-level operations: build Path objects and split Ways into path segments.
-Also includes helpers for concatenation and freeway endpoint extraction.
+Path-level operations: convert Overpass Ways to Path objects and split Paths
+at logical breakpoints (endpoints, traffic lights, specified nodes).
+
+Also includes small helpers for concatenation and connectivity checks.
 """
 
 from models import Node, Path
-from osm import OverPassNode, OverPassWay, is_node_traffic_light
+from osm import OverPassNode, OverPassWay
+from osm_operations import is_node_traffic_light
 
 
 def process_single_path(overpass_way: OverPassWay) -> Path:
-    """Convert a single OverPass way into a Path object."""
+    """Convert a single OverPass way into a Path object.
+
+    Requires geometry and node lists to be present and of equal length.
+    """
     assert overpass_way.geometry, "Way geometry is empty"
     assert overpass_way.nodes, "Way nodes are empty"
     assert len(overpass_way.geometry) == len(overpass_way.nodes), (
@@ -23,15 +29,21 @@ def process_single_path(overpass_way: OverPassWay) -> Path:
 
 
 def can_paths_connect(path1: Path, path2: Path) -> bool:
-    """Default rule to allow contraction: don't connect if path1 is ended."""
+    """Default rule for contraction: allow only if the first path isn't ended.
+
+    The second parameter is unused here but kept for signature compatibility with
+    pluggable predicates.
+    """
     return not path1.ended
 
 
 def break_paths_by_nodes(paths: list[Path], node_ids: set[int]) -> list[Path]:
-    """Split paths at internal nodes whose ids are in node_ids; no ended flags set here.
+    """
+    Split paths at internal nodes whose ids are in `node_ids`.
 
-    Guarantees that for each original path id, the (id, part) pairs in the returned
-    list are unique by assigning parts via a per-id counter.
+    - Does not modify `ended` flags.
+    - Guarantees that for each original path id, the (id, part) pairs in the
+      returned list are unique by assigning parts via a per-id counter.
     """
     if not paths:
         return []
@@ -68,7 +80,7 @@ def break_paths_by_nodes(paths: list[Path], node_ids: set[int]) -> list[Path]:
 
 
 def break_paths_by_endpoints(paths: list[Path]) -> list[Path]:
-    """Split paths at internal nodes that are endpoints of other paths using the generic splitter."""
+    """Split paths at internal nodes that are endpoints of any path in the set."""
     if not paths:
         return []
 
@@ -83,7 +95,7 @@ def break_paths_by_endpoints(paths: list[Path]) -> list[Path]:
 def break_paths_by_traffic_lights(
     paths: list[Path], node_dict: dict[int, OverPassNode]
 ) -> list[Path]:
-    """Split using traffic light nodes, then post-process to set ended and unique part indices."""
+    """Split at traffic light nodes, then mark segments ending at a light as `ended`."""
     # Precompute map of traffic lights and ids
     is_light: dict[int, bool] = {nid: is_node_traffic_light(n) for nid, n in node_dict.items()}
     light_ids: set[int] = {nid for nid, v in is_light.items() if v}
@@ -97,7 +109,7 @@ def break_paths_by_traffic_lights(
 
 
 def concat_paths(path1: list[Path], path2: list[Path]) -> list[Path]:
-    """Concatenate two lists of paths, ensuring unique in path"""
+    """Concatenate two lists of paths, ensuring each path id appears once."""
     seen: set[int] = set()
     result: list[Path] = []
     for p in path1 + path2:
