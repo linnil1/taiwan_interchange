@@ -12,7 +12,7 @@ from collections import Counter
 from collections.abc import Hashable, Iterable
 from typing import TypeVar
 
-from models import Bounds, Node, Ramp
+from models import Bounds, Interchange, Node, Ramp
 
 
 def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -83,3 +83,10 @@ def choose_modal_per_group(group_to_values: dict[int, list[T]]) -> dict[int, T]:
 def ramp_contains_way(ramps: list[Ramp], way_id: int) -> bool:
     """Return True if any path in the given ramps matches the OSM way id."""
     return any(p.id == way_id for r in ramps for p in r.paths)
+
+
+def renumber_interchanges(interchanges: list[Interchange]) -> list[Interchange]:
+    """Renumber interchanges sequentially starting from 1."""
+    for i, ic in enumerate(interchanges):
+        ic.id = i + 1
+    return interchanges

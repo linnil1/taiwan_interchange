@@ -9,8 +9,7 @@ This module provides:
 
 import re
 
-from models import Relation
-from osm import Coordinate, OverPassNode, OverPassResponse, OverPassWay
+from osm import Coordinate, OverPassNode, OverPassRelation, OverPassResponse, OverPassWay
 
 
 def extract_to_destination(way: OverPassWay) -> list[str]:
@@ -118,45 +117,38 @@ def normalize_weigh_station_name(station_name: str) -> str:
     return station_name
 
 
-def process_relations_by_way(response: OverPassResponse, road_type: str) -> dict[int, Relation]:
-    """Process ways and return a node->relation mapping for those with names."""
-    ways = response.list_ways()
-    node_to_relation: dict[int, Relation] = {}
+def process_relations_mapping(
+    response: OverPassResponse,
+) -> list[tuple[OverPassRelation, list[OverPassWay], list[OverPassNode]]]:
+    """Process relation membership and return list of (relation, ways, nodes).
 
-    for way in ways:
-        if not way.tags.get("name"):
-            continue
-        relation = Relation(name=way.tags["name"], road_type=road_type)
-        for node_id in way.nodes:
-            if node_id not in node_to_relation:
-                node_to_relation[node_id] = relation
-    return node_to_relation
+    The road_type is retained for downstream mapping but not used here directly.
+    """
+    if not response.elements:
+        return []
 
-
-def process_relations_mapping(response: OverPassResponse, road_type: str) -> dict[int, Relation]:
-    """Process relation membership to build node->relation mapping by name."""
-    node_to_relations: dict[int, Relation] = {}
     relations = response.list_relations()
     ways = response.list_ways()
+    nodes = response.list_nodes()
 
-    # Create way_id to way mapping for efficiency
-    way_dict = {way.id: way for way in ways}
+    way_by_id = {w.id: w for w in ways}
+    node_by_id = {n.id: n for n in nodes}
+    result: list[tuple[OverPassRelation, list[OverPassWay], list[OverPassNode]]] = []
 
     for relation in relations:
-        if not relation.tags or "name" not in relation.tags:
-            continue
+        # Collect way members for this relation
+        way_ids = [m.ref for m in relation.members if m.type == "way"]
+        rel_ways = [way_by_id[w] for w in way_ids if w in way_by_id]
+        # Collect unique node objects from those ways
+        node_ids = []
+        for w in rel_ways:
+            node_ids.extend(w.nodes)
+        seen: set[int] = set()
+        rel_nodes = [
+            node_by_id[nid]
+            for nid in node_ids
+            if nid in node_by_id and not (nid in seen or seen.add(nid))
+        ]
+        result.append((relation, rel_ways, rel_nodes))
 
-        relation_obj = Relation(name=relation.tags["name"], road_type=road_type)
-
-        # Gather way members
-        way_ids_in_relation = {member.ref for member in relation.members if member.type == "way"}
-
-        # Map all nodes from these ways to this relation object
-        for way_id in way_ids_in_relation:
-            way = way_dict.get(way_id)
-            if way and way.nodes:
-                for node_id in way.nodes:
-                    if node_id not in node_to_relations:
-                        node_to_relations[node_id] = relation_obj
-
-    return node_to_relations
+    return result

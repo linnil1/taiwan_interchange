@@ -16,7 +16,6 @@ from graph_operations import (
 )
 from models import Interchange, Node, Ramp, Relation
 from osm import (
-    OverPassNode,
     OverPassWay,
     load_freeway_routes,
     load_nearby_weigh_stations,
@@ -26,10 +25,8 @@ from osm import (
 )
 from osm_operations import (
     extract_freeway_related_ways,
-    extract_to_destination,
     is_way_access,
     normalize_weigh_station_name,
-    process_relations_by_way,
     process_relations_mapping,
 )
 from path_operations import (
@@ -39,11 +36,21 @@ from path_operations import (
     process_single_path,
 )
 from persistence import save_interchanges
+from relation_operations import (
+    build_weigh_way_relations,
+    extract_ramp_name_by_end_node_relation,
+    extract_ramp_name_by_node_relation,
+    extract_ramp_name_by_way_relation,
+    wrap_junction_name_relation,
+    wrap_relation_to_node_relation,
+    wrap_ways_as_node_relation,
+    wrap_ways_as_relation,
+)
 from utils import (
     calculate_bounds,
-    calculate_distance,
     choose_modal_per_group,
     ramp_contains_way,
+    renumber_interchanges,
 )
 
 # ---- Special-case configuration ----
@@ -63,7 +70,7 @@ SPECIAL_ISOLATE_BRANCH_WAY_IDS: set[int] = {
 # Explicit interchange name overrides when an interchange contains a way ID
 WAY_TO_INTERCHANGE_NAME: dict[int, str] = {
     534195515: "校前路交流道",
-    247148858: "西螺服務區;西螺交流道",
+    247148858: "西螺交流道;西螺服務區",
     136861416: "高工局",
     260755985: "田寮地磅站",
     328852477: "環北交流道",
@@ -155,32 +162,6 @@ def load_and_filter_weigh_stations(use_cache: bool = True) -> list[OverPassWay]:
     return weigh_stations
 
 
-def annotate_ramp_by_way(ramp: Ramp, way_dict: dict[int, OverPassWay]) -> list[str]:
-    """Annotate ramp with destinations by reading OSM way tags from way_dict."""
-    all_destinations = []
-
-    for path in ramp.paths:
-        way = way_dict.get(path.id)
-        if way:
-            dest_list = extract_to_destination(way)
-            all_destinations.extend(dest_list)
-
-    return list(set(all_destinations))
-
-
-def annotate_ramp_by_relation(ramp: Ramp, node_to_relations: dict[int, Relation]) -> list[str]:
-    """Annotate ramp with destinations using a node->relation mapping."""
-    all_destinations = []
-
-    # Use the end node to determine destination
-    _, end_node = ramp.get_endpoint_nodes()
-    relation = node_to_relations.get(end_node.id)
-    if relation:
-        all_destinations.append(relation.name)
-
-    return all_destinations
-
-
 def annotate_ramps_by_propagating(ramps: list[Ramp]) -> list[Ramp]:
     """
     Propagate destination information upstream using reverse topological order of the DAG.
@@ -229,54 +210,43 @@ def annotate_ramps_by_query_unknown(
     # Query for unknown end nodes
     response = load_unknown_end_nodes(unknown_node_ids, interchange_name, use_cache)
 
-    node_to_relation = process_relations_by_way(response, road_type="unknown")
+    node_to_relation = wrap_ways_as_node_relation(response.list_ways(), road_type="unknown")
     for ramp in ramps:
-        destinations = annotate_ramp_by_relation(ramp, node_to_relation)
+        destinations = extract_ramp_name_by_end_node_relation(ramp, node_to_relation)
         ramp.destination.extend(destinations)
     return ramps
 
 
 def annotate_ramp(
     ramp: Ramp,
-    way_dict: dict[int, OverPassWay],
+    way_to_relations: dict[int, Relation] | None = None,
     node_to_relations: dict[int, Relation] | None = None,
+    weigh_way_to_relations: dict[int, Relation] | None = None,
 ) -> Ramp:
-    """Annotate a single ramp with destinations using relations and way tags."""
+    """Annotate a single ramp with destinations using priority:
+    1) end-node relation; 2) weigh-station way relation; 3) generic way relation.
+    """
     # original destination: weight station is already set before this func
-    all_destinations = ramp.destination
+    all_destinations = list(ramp.destination)
 
-    # Try relation mapping first (highest priority)
-    if node_to_relations:
-        relation_destinations = annotate_ramp_by_relation(ramp, node_to_relations)
-        all_destinations.extend(relation_destinations)
+    # 1) end-node relation
+    if not all_destinations and node_to_relations:
+        end_node_dests = extract_ramp_name_by_end_node_relation(ramp, node_to_relations)
+        all_destinations.extend(end_node_dests)
 
-    # If no relation destinations, try way tags
-    # TODO: temporary disabled it
-    if not all_destinations:
-        way_destinations = annotate_ramp_by_way(ramp, way_dict)
-        all_destinations.extend(way_destinations)
+    # 2) weigh-station way relation
+    if not all_destinations and weigh_way_to_relations:
+        weigh_dests = extract_ramp_name_by_way_relation(ramp, weigh_way_to_relations)
+        all_destinations.extend(weigh_dests)
 
-    # Create annotated ramp with id and destination list
+    # 3) generic way relation
+    if not all_destinations and way_to_relations:
+        way_dests = extract_ramp_name_by_way_relation(ramp, way_to_relations)
+        all_destinations.extend(way_dests)
+
+    # Assign de-duplicated
     ramp.destination = list(set(all_destinations))
     return ramp
-
-
-def extract_name_from_interchange(ramps: list[Ramp], node_dict: dict[int, OverPassNode]) -> str:
-    """Extract interchange name from motorway_junction nodes with name tags."""
-    junction_names = []
-
-    for ramp in ramps:
-        for path in ramp.paths:
-            for node in path.nodes:
-                osm_node = node_dict.get(node.id)
-                if osm_node and osm_node.tags and (osm_node.id not in IGNORED_NODE_IDS):
-                    if (
-                        osm_node.tags.get("highway") == "motorway_junction"
-                        and "name" in osm_node.tags
-                    ):
-                        junction_names.append(osm_node.tags["name"])
-
-    return ";".join(set(junction_names)) if junction_names else ""
 
 
 def merge_interchanges(interchanges: list[Interchange]) -> Interchange:
@@ -387,13 +357,6 @@ def merge_interchanges_by_name(interchanges: list[Interchange]) -> list[Intercha
     return renumber_interchanges(merged)
 
 
-def renumber_interchanges(interchanges: list[Interchange]) -> list[Interchange]:
-    """Renumber interchanges sequentially starting from 1."""
-    for i, ic in enumerate(interchanges):
-        ic.id = i + 1
-    return interchanges
-
-
 def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
     # Calculate bounds from all ramp nodes
     all_nodes: Iterable[Node] = chain.from_iterable(ramp.list_nodes() for ramp in ramps)
@@ -411,118 +374,54 @@ def create_interchange_from_ramps(ramps: list[Ramp], id: int) -> Interchange:
     return Interchange(id=id, name=interchange_name, bounds=bounds, ramps=ramps)
 
 
-def find_closest_weigh_station_name(
-    ramp: Ramp, weigh_stations: list[OverPassWay], threshold_km: float = 2.0
-) -> str | None:
-    """
-    Find the closest weigh station name to the ramp's end node within threshold distance
-
-    Args:
-        ramp: Ramp object to find station for
-        weigh_station_ways: List of OverPassWay objects containing weigh station data
-        threshold_km: Maximum distance threshold in kilometers
-
-    Returns:
-        Weigh station name if found within threshold, None otherwise
-    """
-    # Get 10 evenly spaced nodes from the ramp
-    nodes = ramp.list_nodes()
-    step = len(nodes) // 10
-    step = step if step > 0 else 1  # Ensure step is at least 1
-    nodes = nodes[::step]
-
-    closest_distance = float("inf")
-    closest_station_name = None
-
-    for station in weigh_stations:
-        coord = station.geometry[0]
-        distances = [calculate_distance(node.lat, node.lng, coord.lat, coord.lng) for node in nodes]
-        distance = min(distances) if distances else float("inf")
-        if distance < closest_distance:
-            closest_distance = distance
-            closest_station_name = station.tags["name"]
-
-    # Return station name only if within threshold
-    if closest_distance <= threshold_km:
-        return closest_station_name
-    return None
-
-
 def annotate_interchange_name(
     interchange: Interchange,
-    node_dict: dict[int, OverPassNode],
-    weigh_stations: list[OverPassWay],
-    distance_threshold_km: float = 0.05,
+    junction_node_rel: dict[int, Relation],
+    weigh_way_rel: dict[int, Relation],
 ) -> Interchange:
     """
     Annotate single interchange with proper name based on motorway_junction nodes
     If no junction name found, try to find nearby weigh stations within threshold distance
     """
-    # Extract proper name from motorway_junction nodes
-    junction_name = extract_name_from_interchange(interchange.ramps, node_dict)
-
-    if junction_name:
-        # Use the junction name
-        interchange.name = junction_name
+    # Derive junction name(s) via provided node relations
+    names: set[str] = set()
+    for ramp in interchange.ramps:
+        names.update(extract_ramp_name_by_node_relation(ramp, junction_node_rel))
+    if names:
+        interchange.name = ";".join(sorted(names))
         return interchange
 
-    # No junction name found, try to find nearby weigh stations
-    name, ramp_to_station = get_interchange_and_ramp_name_by_weight_stations(
-        interchange.ramps, interchange, weigh_stations, distance_threshold_km
-    )
-    if name:
-        interchange.name = name
-        for ramp in interchange.ramps:
-            if ramp.id in ramp_to_station:
-                ramp.destination.append(ramp_to_station[ramp.id])
-
+    # Fallback: if no junction name, try weigh-station way relations
+    weigh_names: set[str] = set()
+    for ramp in interchange.ramps:
+        weigh_names.update(extract_ramp_name_by_way_relation(ramp, weigh_way_rel))
+    if weigh_names:
+        weigh_names = set(normalize_weigh_station_name(name) for name in weigh_names if name)
+        interchange.name = ";".join(sorted(weigh_names))
     return interchange
-
-
-def get_interchange_and_ramp_name_by_weight_stations(
-    interchange_ramps: list[Ramp],
-    interchange: Interchange,
-    weigh_stations: list[OverPassWay],
-    distance_threshold_km: float = 0.05,
-) -> tuple[str, dict[int, str]]:
-    # First, find all weigh stations for all ramps (store original names)
-    ramp_to_station = {}
-    for ramp in interchange_ramps:
-        weigh_station_name = find_closest_weigh_station_name(
-            ramp, weigh_stations, distance_threshold_km
-        )
-        if weigh_station_name:
-            ramp_to_station[ramp.id] = weigh_station_name
-
-    # Check if we found any weigh stations
-    if not ramp_to_station:
-        return "", {}
-
-    # Overwrite by branch majority so all ramps in a branch share the modal station name
-    # Build group->values list using branch_id and current mapping
-    branch_to_values: dict[int, list[str]] = defaultdict(list)
-    for r in interchange.ramps:
-        if r.id in ramp_to_station:
-            branch_to_values[r.branch_id].append(ramp_to_station[r.id])
-    branch_modal = choose_modal_per_group(branch_to_values)
-    for r in interchange.ramps:
-        if r.id in ramp_to_station and r.branch_id in branch_modal:
-            ramp_to_station[r.id] = branch_modal[r.branch_id]
-    return normalize_weigh_station_name(list(ramp_to_station.values())[0]), ramp_to_station
 
 
 def annotate_interchange_ramps(
     interchange: Interchange,
-    way_dict: dict[int, OverPassWay],
+    way_to_relations: dict[int, Relation] | None = None,
     node_to_relations: dict[int, Relation] | None = None,
+    weigh_way_to_relations: dict[int, Relation] | None = None,
     use_cache: bool = True,
 ) -> Interchange:
     """Annotate all ramps in an interchange with destinations."""
     # First annotate individual ramps
-    ramps = [annotate_ramp(ramp, way_dict, node_to_relations) for ramp in interchange.ramps]
+    ramps = [
+        annotate_ramp(
+            ramp,
+            way_to_relations=way_to_relations,
+            node_to_relations=node_to_relations,
+            weigh_way_to_relations=weigh_way_to_relations,
+        )
+        for ramp in interchange.ramps
+    ]
 
     # Then use query unknown for ramps with empty destinations
-    ramps = annotate_ramps_by_query_unknown(ramps, interchange.name, use_cache)
+    # ramps = annotate_ramps_by_query_unknown(ramps, interchange.name, use_cache)
 
     # Finally, propagate destinations upstream from exit ramps to entry ramps
     ramps = annotate_ramps_by_propagating(ramps)
@@ -535,7 +434,7 @@ def annotate_interchange_ramps(
     )
 
 
-def build_node_to_relation_mapping(use_cache: bool = True) -> dict[int, Relation]:
+def build_highway_relation(use_cache: bool = True) -> dict[int, Relation]:
     """Build mapping from node id to road relation objects (freeway, provincial)."""
     # Load the responses
     response_freeway = load_freeway_routes(use_cache)
@@ -545,11 +444,13 @@ def build_node_to_relation_mapping(use_cache: bool = True) -> dict[int, Relation
     node_to_relations = {}
 
     # Process provincial first (lower priority)
-    provincial_mapping = process_relations_mapping(response_provincial, "provincial")
+    provincial_rel = process_relations_mapping(response_provincial)
+    provincial_mapping = wrap_relation_to_node_relation(provincial_rel, "provincial")
     node_to_relations.update(provincial_mapping)
 
     # Process freeway second (higher priority, will overwrite provincial)
-    freeway_mapping = process_relations_mapping(response_freeway, "freeway")
+    freeway_rel = process_relations_mapping(response_freeway)
+    freeway_mapping = wrap_relation_to_node_relation(freeway_rel, "freeway")
     node_to_relations.update(freeway_mapping)
 
     return node_to_relations
@@ -565,6 +466,12 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     ways = response.list_ways()
     ways = [i for i in ways if is_way_access(i)]
     nodes = response.list_nodes()
+    print(f"Loaded {len(ways)} motorway_link ways and {len(nodes)} motorway junction nodes")
+
+    if not ways or not nodes:
+        print("No motorway links/nodes found in Taiwan")
+        return False
+
     # Also include the very first/last non-motorway_link ways at freeway endpoints
     freeway_resp = load_freeway_routes(use_cache)
     freeway_ways = extract_freeway_related_ways(freeway_resp)
@@ -573,21 +480,11 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     print(f"Found {len(freeway_endpoints)} freeway endpoint ways (pre-filter)")
     # We'll filter right before concatenation when motorway_link paths are available
 
-    if not ways:
-        print("No motorway links found in Tainan")
-        return False
-
-    print("Building node to relation mapping...")
-    node_to_relations = build_node_to_relation_mapping(use_cache)
-    print(f"Mapped {len(node_to_relations)} nodes to road relations")
-
     print("Processing paths and ramps...")
-
-    # Create dictionaries for efficient lookup
-    way_dict = {way.id: way for way in ways}
+    # Create dictionaries / mappings for efficient lookup
     node_dict = {node.id: node for node in nodes}
-
-    # Process individual paths from ways
+    way_to_relations = wrap_ways_as_relation(ways, road_type="way")
+    junction_node_rel = wrap_junction_name_relation(node_dict)
     paths = [process_single_path(way) for way in ways]
     print(f"Processed {len(paths)} paths")
 
