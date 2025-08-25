@@ -118,8 +118,6 @@ def wrap_relation_to_node_relation(
             continue
         relation_obj = Relation(name=relation.tags["name"], road_type=road_type)
         for way in ways:
-            if not getattr(way, "nodes", None):
-                continue
             for node_id in way.nodes:
                 if node_id not in node_to_relations:
                     node_to_relations[node_id] = relation_obj
@@ -131,44 +129,43 @@ def build_weigh_way_relations(
     weigh_stations: list[OverPassWay],
     threshold_km: float = 0.05,
 ) -> WayRelationMap:
-    """Build a global way_id -> Relation mapping for ways near a weigh station.
+    """Build way_id -> Relation mapping for weigh stations to their closest way.
 
-    For each way (with geometry), if its sampled geometry points are within the threshold
-    of the nearest weigh station, map the way_id to that station's name.
+    For each weigh station, find the single closest way (based on sampled geometry points).
+    If the minimum distance is within ``threshold_km``, annotate that way with the station's
+    name. Conflicts where multiple stations choose the same way are resolved by keeping the
+    station that is closer to that way.
     """
     if not ways or not weigh_stations:
         return WayRelationMap({})
 
-    # Prepare station reference points
-    station_points: list[tuple[str, float, float]] = []  # (name, lat, lng)
+    way_to_rel: dict[int, Relation] = {}
+
     for ws in weigh_stations:
+        sname = ws.tags.get("name")
+        if not sname:
+            continue
+        rel = Relation(name=sname, road_type="weigh")
         if not ws.geometry:
             continue
-        name = ws.tags.get("name")
-        if not name:
-            continue
-        p = ws.geometry[0]
-        station_points.append((name, p.lat, p.lng))
+        slat, slng = ws.geometry[0].lat, ws.geometry[0].lng
 
-    way_to_rel: dict[int, Relation] = {}
-    for w in ways:
-        geom = getattr(w, "geometry", None)
-        if not geom:
-            continue
-        step = max(1, len(geom) // 10)
-        samples = geom[::step]
-        closest_d = float("inf")
-        closest_name: str | None = None
-        for sname, slat, slng in station_points:
+        closest_way_id: int | None = None
+        closest_dist: float = float("inf")
+        for way in ways:
+            step_size = max(1, len(way.nodes) // 10)
+            points = way.geometry[::step_size] if step_size else []
             d = min(
-                (calculate_distance(pt.lat, pt.lng, slat, slng) for pt in samples),
-                default=float("inf"),
+                (calculate_distance(n.lat, n.lng, slat, slng) for n in points), default=float("inf")
             )
-            if d < closest_d:
-                closest_d = d
-                closest_name = sname
-        if closest_name and closest_d <= threshold_km:
-            way_to_rel[w.id] = Relation(name=closest_name, road_type="weigh")
+            if d < closest_dist:
+                closest_dist = d
+                closest_way_id = way.id
+
+        if closest_way_id is None or closest_dist > threshold_km:
+            continue
+        way_to_rel[closest_way_id] = rel
+
     return WayRelationMap(way_to_rel)
 
 

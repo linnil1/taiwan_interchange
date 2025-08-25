@@ -87,7 +87,7 @@ def extract_freeway_related_ways(response: OverPassResponse) -> list[OverPassWay
             continue
         seen.add(wid)
         w = way_by_id.get(wid)
-        if not w or not getattr(w, "nodes", None):
+        if not w or not w.nodes:
             continue
         # Ignore proposed highways
         if (w.tags or {}).get("highway") == "proposed":
@@ -115,6 +115,15 @@ def normalize_weigh_station_name(station_name: str) -> str:
     if match:
         return match.group(1) + "地磅站"
     return station_name
+
+
+def filter_weight_stations(response: OverPassResponse) -> list[OverPassWay]:
+    """Return weigh station ways that have a name and geometry.
+
+    The input is the OverPassResponse from load_nearby_weigh_stations.
+    """
+    ways = response.list_ways()
+    return [w for w in ways if (w.tags or {}).get("name") and getattr(w, "geometry", None)]
 
 
 def process_relations_mapping(

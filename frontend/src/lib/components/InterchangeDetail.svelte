@@ -80,8 +80,16 @@
 		<div>
 			<h3 class="font-semibold text-gray-700 mb-3">Ramps:</h3>
 			{#each interchange.ramps as ramp, i}
-				<button
+				<div
 					bind:this={rampElements[i]}
+					role="button"
+					tabindex="0"
+					onkeydown={(e) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.preventDefault();
+							selectRamp(i);
+						}
+					}}
 					onclick={() => selectRamp(i)}
 					class="w-full mb-3 p-3 border rounded transition-all duration-300 cursor-pointer {selectedRampIndex ===
 					i
@@ -100,6 +108,7 @@
 							</span>
 							{#if selectedRampIndex === i && onFitToRamp}
 								<button
+									type="button"
 									class="ml-2 text-blue-500 hover:text-blue-700 transition-colors"
 									onclick={(e) => {
 										e.stopPropagation();
@@ -121,6 +130,7 @@
 						<div class="mb-2 text-xs flex flex-wrap gap-1 mt-1 items-center">
 							{#each connections.fromRamps as fromRamp}
 								<button
+									type="button"
 									class="px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
 									onclick={(e) => {
 										e.stopPropagation();
@@ -132,6 +142,7 @@
 							{/each}
 							{#each connections.toRamps as toRamp}
 								<button
+									type="button"
 									class="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
 									onclick={(e) => {
 										e.stopPropagation();
@@ -146,7 +157,20 @@
 
 					<div class="text-sm text-gray-600 mb-2">
 						<strong>To:</strong>
-						{ramp.destination.length > 0 ? ramp.destination.join(', ') : 'Unknown'}
+						{#if ramp.destination.length > 0}
+							{#each ramp.destination as d, di}
+								<span class="inline-flex items-center mr-2">
+									<span
+										class="px-1.5 py-0.5 rounded text-white text-[10px] mr-1 {d.type === 'ENTER'
+											? 'bg-blue-500'
+											: 'bg-green-600'}">{d.type}</span
+									>
+									{d.name}{di < ramp.destination.length - 1 ? ',' : ''}
+								</span>
+							{/each}
+						{:else}
+							Unknown
+						{/if}
 					</div>
 
 					<!-- Paths within ramp -->
@@ -196,7 +220,7 @@
 							</div>
 						{/each}
 					</div>
-				</button>
+				</div>
 			{/each}
 		</div>
 	</div>

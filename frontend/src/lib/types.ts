@@ -21,11 +21,21 @@ export interface Path {
 	nodes: Node[];
 }
 
+export const enum DestinationType {
+	EXIT = 'EXIT',
+	ENTER = 'ENTER'
+}
+
+export interface Destination {
+	name: string;
+	type: DestinationType;
+}
+
 export interface Ramp {
 	/** Unique identifier for the ramp */
 	id: number;
 	/** Destination(s) that this ramp leads to */
-	destination: string[];
+	destination: Destination[];
 	/** Source ramp IDs that connect to this ramp */
 	from_ramps: number[];
 	/** Target ramp IDs that this ramp connects to */
@@ -84,6 +94,7 @@ export function isRamp(obj: any): obj is Ramp {
 		typeof obj === 'object' &&
 		typeof obj.id === 'number' &&
 		Array.isArray(obj.destination) &&
+		obj.destination.every((d: any) => typeof d?.name === 'string' && typeof d?.type === 'string') &&
 		Array.isArray(obj.from_ramps) &&
 		Array.isArray(obj.to_ramps) &&
 		Array.isArray(obj.paths) &&

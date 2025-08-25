@@ -1,6 +1,8 @@
 """Data models for the interchange project"""
 
-from pydantic import BaseModel
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict
 
 
 class Node(BaseModel):
@@ -28,11 +30,23 @@ class Path(BaseModel):
         return (self.nodes[0], self.nodes[-1])
 
 
+class DestinationType(str, Enum):
+    EXIT = "EXIT"  # from freeway to normal road
+    ENTER = "ENTER"  # to freeway
+    OSM = "OSM"  # OSM proivded
+
+
+class Destination(BaseModel):
+    name: str
+    type: DestinationType
+    model_config = ConfigDict(frozen=True)
+
+
 class Ramp(BaseModel):
     """Represents a motorway ramp with its paths"""
 
     id: int
-    destination: list[str] = []
+    destination: list[Destination] = []
     from_ramps: list[int] = []  # IDs of ramps that connect to this ramp
     to_ramps: list[int] = []  # IDs of ramps that this ramp connects to
     dag_to: list[int] = []  # DAG-only downstream edges (subset of to_ramps)
