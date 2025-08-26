@@ -126,6 +126,18 @@ def filter_weight_stations(response: OverPassResponse) -> list[OverPassWay]:
     return [w for w in ways if (w.tags or {}).get("name") and getattr(w, "geometry", None)]
 
 
+def is_one_way(way: OverPassWay) -> bool:
+    """Determine if a way is one-way.
+
+    Considers common OSM encodings:
+    - oneway=yes/true/1/-1 treated as one-way ("-1" means opposite direction)
+    - oneway=no/false/0 treated as two-way
+    Missing tag treated as two-way.
+    """
+    val = (way.tags or {}).get("oneway", "no").strip().lower()
+    return val in {"yes", "true", "1", "-1"}
+
+
 def process_relations_mapping(
     response: OverPassResponse,
 ) -> list[tuple[OverPassRelation, list[OverPassWay], list[OverPassNode]]]:

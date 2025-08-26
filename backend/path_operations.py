@@ -7,13 +7,17 @@ Also includes small helpers for concatenation and connectivity checks.
 
 from models import Node, Path
 from osm import OverPassNode, OverPassWay
-from osm_operations import is_node_traffic_light
+from osm_operations import is_node_traffic_light, is_one_way, is_way_access
 
 
-def process_single_path(overpass_way: OverPassWay) -> Path:
+def process_single_path(overpass_way: OverPassWay, reverse: bool = False) -> Path:
     """Convert a single OverPass way into a Path object.
 
     Requires geometry and node lists to be present and of equal length.
+
+    Args:
+        overpass_way: Source way from Overpass.
+        reverse: When True, build the path with nodes reversed (for two-way duplication).
     """
     assert overpass_way.geometry, "Way geometry is empty"
     assert overpass_way.nodes, "Way nodes are empty"
@@ -22,10 +26,45 @@ def process_single_path(overpass_way: OverPassWay) -> Path:
     )
 
     nodes = [
-        Node(lat=coord.lat, lng=coord.lng, id=node_id)
-        for coord, node_id in zip(overpass_way.geometry, overpass_way.nodes)
+        Node(lat=c.lat, lng=c.lng, id=nid)
+        for c, nid in zip(overpass_way.geometry, overpass_way.nodes)
     ]
-    return Path(id=overpass_way.id, part=0, nodes=nodes)
+    # Use part=1 for reversed copy to differentiate; downstream splitters will renumber parts anyway
+    part = 1 if reverse else 0
+    nodes = list(reversed(nodes)) if reverse else nodes
+    return Path(id=overpass_way.id, part=part, nodes=nodes)
+
+
+def filter_accessible_ways(
+    ways: list[OverPassWay], excluded_ids: set[int] | None = None
+) -> list[OverPassWay]:
+    """Filter ways to those that are accessible and not excluded by id.
+
+    Args:
+        ways: Input OverPass ways.
+        excluded_ids: Optional set of way IDs to exclude.
+    """
+    excluded_ids = excluded_ids or set()
+    return [w for w in ways if is_way_access(w) and w.id not in excluded_ids]
+
+
+def process_paths_from_ways(
+    ways: list[OverPassWay], *, excluded_ids: set[int] | None = None, duplicate_two_way: bool = True
+) -> list[Path]:
+    """Convert a list of OverPass ways into a list of Path objects.
+
+    - Filters ways by accessibility and excluded IDs.
+    - Converts each way into a Path.
+    - If duplicate_two_way is True and way is not explicitly oneway=yes,
+      also adds a reversed Path for the same way id.
+    """
+    filtered = filter_accessible_ways(ways, excluded_ids)
+    paths: list[Path] = []
+    for way in filtered:
+        paths.append(process_single_path(way))
+        if duplicate_two_way and not is_one_way(way):
+            paths.append(process_single_path(way, reverse=True))
+    return paths
 
 
 def can_paths_connect(path1: Path, path2: Path) -> bool:
@@ -110,10 +149,9 @@ def break_paths_by_traffic_lights(
 
 def concat_paths(path1: list[Path], path2: list[Path]) -> list[Path]:
     """Concatenate two lists of paths, ensuring each path id appears once."""
-    seen: set[int] = set()
-    result: list[Path] = []
-    for p in path1 + path2:
-        if p.id not in seen:
-            seen.add(p.id)
-            result.append(p)
-    return result
+    # Allow path1, path2 has duplicated path id
+    # If they share ids, prefer path1
+    path1_ids = set(i.id for i in path1)
+    path2_ids = set(i.id for i in path2)
+    new_ids = path2_ids - path1_ids
+    return path1 + [p for p in path2 if p.id in new_ids]

@@ -8,7 +8,6 @@ loading/assembly for clarity.
 """
 
 from collections import Counter, defaultdict, deque
-from collections.abc import Callable
 
 import networkx as nx
 
@@ -45,22 +44,16 @@ class DisjointSet:
 
 def contract_paths_to_ramps(
     paths: list[Path],
-    can_connect: Callable[[Path, Path], bool] | None = None,
 ) -> list[Ramp]:
     """
     Contract sequential paths into ramps by merging along nodes that have
     exactly one incoming and one outgoing edge.
-
-    Connectivity across ended segments is controlled via the `can_connect`
-    predicate (defaults to disallow if the first path is `ended`).
 
     Returns a list of Ramp objects with contiguous Path sequences; graph
     connectivity (from_ramps/to_ramps) is not set here.
     """
     if not paths:
         return []
-    if can_connect is None:
-        can_connect = can_paths_connect
 
     # Build adjacency of paths by endpoint node ids
     outgoing_paths: defaultdict[int, list[Path]] = defaultdict(list)
@@ -92,7 +85,7 @@ def contract_paths_to_ramps(
             if sub_id in used:
                 # Prevent accidental loops
                 break
-            if not can_connect(cur, nxt):
+            if not can_paths_connect(cur, nxt):
                 break
             chain.append(nxt)
             used.add(sub_id)
