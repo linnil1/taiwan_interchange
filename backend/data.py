@@ -14,9 +14,10 @@ from graph_operations import (
     filter_endpoints_by_motorway_link,
     get_reverse_topological_order,
 )
-from models import Destination, DestinationType, Interchange, Node, Ramp, Relation
+from models import Destination, DestinationType, Interchange, Node, Ramp
 from osm import (
     OverPassResponse,
+    load_adjacent_road_relations,
     load_freeway_routes,
     load_nearby_weigh_stations,
     load_overpass,
@@ -44,6 +45,7 @@ from relation_operations import (
     extract_ramp_name_by_end_node_relation,
     extract_ramp_name_by_node_relation,
     extract_ramp_name_by_way_relation,
+    wrap_adj_road_relation,
     wrap_junction_name_relation,
     wrap_relation_to_node_relation,
     wrap_ways_as_node_relation,
@@ -166,7 +168,7 @@ def annotate_ramps_by_propagating(ramps: list[Ramp]) -> list[Ramp]:
     for ramp in ramps:
         # Collect destinations from all downstream ramps
         collected: list[Destination] = []
-        for downstream_ramp_id in ramp.dag_to:
+        for downstream_ramp_id in ramp.to_ramps:
             downstream_ramp = ramp_dict.get(downstream_ramp_id)
             if downstream_ramp and downstream_ramp.destination:
                 collected.extend(downstream_ramp.destination)
@@ -227,29 +229,47 @@ def annotate_ramps_by_query_unknown(
 def annotate_ramp(
     ramp: Ramp,
     way_to_relations: WayRelationMap | None = None,
-    node_to_relations: NodeRelationMap | None = None,
+    freeway_node_rel: NodeRelationMap | None = None,
+    provincial_node_rel: NodeRelationMap | None = None,
     weigh_way_to_relations: WayRelationMap | None = None,
+    endnode_adjacent_relations: NodeRelationMap | None = None,
 ) -> Ramp:
     """Annotate a single ramp with destinations using priority:
-    1) end-node relation; 2) weigh-station way relation; 3) generic way relation.
+    1) weigh-station way relation (EXIT);
+    2) freeway end-node relation (ENTER);
+    3) provincial end-node relation (ENTER);
+    4) end-node adjacent route relation (EXIT);
+    5) generic OSM way relation (lowest, OSM).
     """
     # original destination: weight station is already set before this func
     all_destinations = list(ramp.destination)
 
-    # 1) end-node relation
-    if not all_destinations and node_to_relations:
-        end_node_names = extract_ramp_name_by_end_node_relation(ramp, node_to_relations)
-        all_destinations.extend(
-            Destination(name=n, type=DestinationType.ENTER) for n in end_node_names
-        )
-
-    # 2) weigh-station way relation
+    # 1) weigh-station way relation (top priority)
     if not all_destinations and weigh_way_to_relations:
         weigh_names = extract_ramp_name_by_way_relation(ramp, weigh_way_to_relations)
         # weigh station implies EXIT direction
         all_destinations.extend(Destination(name=n, type=DestinationType.EXIT) for n in weigh_names)
 
-    # 3) generic way relation
+    # 2) freeway end-node relation
+    if not all_destinations and freeway_node_rel:
+        freeway_names = extract_ramp_name_by_end_node_relation(ramp, freeway_node_rel)
+        all_destinations.extend(
+            Destination(name=n, type=DestinationType.ENTER) for n in freeway_names
+        )
+
+    # 3) provincial end-node relation
+    if not all_destinations and provincial_node_rel:
+        provincial_names = extract_ramp_name_by_end_node_relation(ramp, provincial_node_rel)
+        all_destinations.extend(
+            Destination(name=n, type=DestinationType.ENTER) for n in provincial_names
+        )
+
+    # 4) end-node adjacent route relation (EXIT)
+    if not all_destinations and endnode_adjacent_relations:
+        adj_names = extract_ramp_name_by_end_node_relation(ramp, endnode_adjacent_relations)
+        all_destinations.extend(Destination(name=n, type=DestinationType.EXIT) for n in adj_names)
+
+    # 5) generic way relation (lowest priority)
     if not all_destinations and way_to_relations:
         way_names = extract_ramp_name_by_way_relation(ramp, way_to_relations)
         all_destinations.extend(Destination(name=n, type=DestinationType.OSM) for n in way_names)
@@ -408,8 +428,10 @@ def annotate_interchange_name(
 def annotate_interchange_ramps(
     interchange: Interchange,
     way_to_relations: WayRelationMap | None = None,
-    node_to_relations: NodeRelationMap | None = None,
+    freeway_node_rel: NodeRelationMap | None = None,
+    provincial_node_rel: NodeRelationMap | None = None,
     weigh_way_to_relations: WayRelationMap | None = None,
+    endnode_adjacent_relations: NodeRelationMap | None = None,
     use_cache: bool = True,
 ) -> Interchange:
     """Annotate all ramps in an interchange with destinations."""
@@ -418,14 +440,16 @@ def annotate_interchange_ramps(
         annotate_ramp(
             ramp,
             way_to_relations=way_to_relations,
-            node_to_relations=node_to_relations,
+            freeway_node_rel=freeway_node_rel,
+            provincial_node_rel=provincial_node_rel,
             weigh_way_to_relations=weigh_way_to_relations,
+            endnode_adjacent_relations=endnode_adjacent_relations,
         )
         for ramp in interchange.ramps
     ]
 
     # Then use query unknown for ramps with empty destinations
-    ramps = annotate_ramps_by_query_unknown(ramps, interchange.name, use_cache)
+    # ramps = annotate_ramps_by_query_unknown(ramps, interchange.name, use_cache)
 
     # Finally, propagate destinations upstream from exit ramps to entry ramps
     ramps = annotate_ramps_by_propagating(ramps)
@@ -527,26 +551,31 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     interchanges = merge_interchanges_by_name(interchanges)
     print(f"After merge: {len(interchanges)} interchanges")
 
-    print("Building node->exit relation mapping (provincial + freeway)...")
     provincial_resp = load_provincial_routes(use_cache)
     provincial_node_rel = build_exit_relation(provincial_resp, "provincial")
+    print(f"Prepared {len(provincial_node_rel)} provincial node relations")
+
     # freeway_resp already loaded above
     freeway_node_rel = build_exit_relation(freeway_resp, "freeway")
-    # Merge with priority: freeway overrides provincial
-    node_to_relations_dict: dict[int, Relation] = {}
-    node_to_relations_dict.update(provincial_node_rel)
-    node_to_relations_dict.update(freeway_node_rel)
-    node_to_relations = NodeRelationMap(node_to_relations_dict)
-    print(f"Mapped {len(node_to_relations)} nodes to road relations")
+    print(
+        f"Prepared {len(freeway_node_rel)} freeway and {len(provincial_node_rel)} provincial node relations"
+    )
 
     # We already have weigh_way_rel for all ways
     print(f"Prepared {len(weigh_way_rel)} weigh-station relations (way-based)")
+
+    # Build adjacent road relations for end-node annotation (used before generic way relation)
+    adj_resp = load_adjacent_road_relations(use_cache)
+    endnode_adjacent_relations = wrap_adj_road_relation(adj_resp)
+    print(f"Prepared {len(endnode_adjacent_relations)} adjacent route=road relations (node-based)")
     interchanges = [
         annotate_interchange_ramps(
             interchange,
             way_to_relations=way_to_relations,
-            node_to_relations=node_to_relations,
+            freeway_node_rel=freeway_node_rel,
+            provincial_node_rel=provincial_node_rel,
             weigh_way_to_relations=weigh_way_rel,
+            endnode_adjacent_relations=endnode_adjacent_relations,
             use_cache=use_cache,
         )
         for interchange in interchanges

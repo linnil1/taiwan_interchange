@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from typing import NewType
 
 from models import Ramp, Relation
-from osm import OverPassNode, OverPassRelation, OverPassWay
+from osm import OverPassNode, OverPassRelation, OverPassResponse, OverPassWay
 from osm_operations import extract_to_destination
 from utils import calculate_distance
 
@@ -122,6 +122,48 @@ def wrap_relation_to_node_relation(
                 if node_id not in node_to_relations:
                     node_to_relations[node_id] = relation_obj
     return NodeRelationMap(node_to_relations)
+
+
+def wrap_adj_road_relation(response: OverPassResponse) -> NodeRelationMap:
+    """Build node->Relation mapping for adjacent roads.
+
+    Preference:
+    - If a way is part of a named route=road relation (excluding network TW:freeway/TW:provincial),
+      use the relation's name.
+    - Otherwise, fall back to the way's own name.
+
+    Returns NodeRelationMap mapping node_id -> Relation(name, road_type="road").
+    """
+    ways = response.list_ways()
+    relations = response.list_relations()
+
+    # Filter relevant relations: route=road, has name, and NOT freeway/provincial networks
+    rel_way_to_name: dict[int, str] = {}
+    for rel in relations:
+        tags = rel.tags or {}
+        if tags.get("route") != "road":
+            continue
+        if not tags.get("name"):
+            continue
+        network = tags.get("network")
+        if network in {"TW:freeway", "TW:provincial"}:
+            continue
+        for m in rel.members:
+            if m.type == "way":
+                rel_way_to_name[m.ref] = tags["name"]
+
+    node_to_relation: dict[int, Relation] = {}
+    for way in ways:
+        # Prefer relation name; else way name
+        name = rel_way_to_name.get(way.id) or ((way.tags or {}).get("name") or "")
+        if not name:
+            continue
+        rel_obj = Relation(name=name, road_type="normal_road")
+        for nid in way.nodes:
+            if nid not in node_to_relation:
+                node_to_relation[nid] = rel_obj
+
+    return NodeRelationMap(node_to_relation)
 
 
 def build_weigh_way_relations(

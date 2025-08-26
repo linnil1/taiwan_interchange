@@ -239,3 +239,35 @@ def load_nearby_weigh_stations(use_cache: bool = True) -> OverPassResponse:
 def load_overpass(use_cache: bool = True) -> OverPassResponse:
     """Load motorway_link/junction Overpass response from cache or Overpass API."""
     return load_or_fetch_overpass("overpass_cache.json", query_overpass_api, use_cache=use_cache)
+
+
+def query_adjacent_road_relations() -> dict | None:
+    """Query Overpass API for route=road relations adjacent to motorway_link nodes in Taiwan.
+
+    This focuses on ways connected to motorway_link nodes (excluding the links themselves),
+    then finds named route=road relations for those ways. Used to annotate end-node relations
+    as a fallback after generic way relations.
+    """
+    overpass_url = "http://overpass-api.de/api/interpreter"
+
+    query = """
+    [out:json][timeout:60];
+    area["name:en"="Taiwan"]->.taiwan;
+    way["highway"="motorway_link"](area.taiwan)->.motorway_links;
+    node(w.motorway_links)->.motorway_links_nodes;
+    way(bn.motorway_links_nodes)["highway"!="motorway_link"]->.nodes_way;
+    rel(bw.nodes_way)["name"]["route"="road"]->.nodes_way_rel;
+    .ways_rel out body;
+    .nodes_way out body;
+    .nodes_way_rel out body;
+    """
+    response = requests.post(overpass_url, data={"data": query})
+    response.raise_for_status()
+    return response.json()
+
+
+def load_adjacent_road_relations(use_cache: bool = True) -> OverPassResponse:
+    """Load adjacent route=road relations from cache or Overpass API."""
+    return load_or_fetch_overpass(
+        "adjacent_road_relations_cache.json", query_adjacent_road_relations, use_cache=use_cache
+    )
