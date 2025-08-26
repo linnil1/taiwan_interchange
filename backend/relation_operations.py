@@ -37,6 +37,22 @@ def extract_ramp_name_by_end_node_relation(
     return all_destinations
 
 
+def extract_ramp_name_by_start_node_relation(
+    ramp: Ramp, node_to_relations: NodeRelationMap
+) -> list[str]:
+    """Extract ramp name(s) using a node->relation mapping (by start node).
+
+    This is useful for generic node relations like junction names when
+    end-node mapping or other sources are unavailable.
+    """
+    names: list[str] = []
+    start_node, _ = ramp.get_endpoint_nodes()
+    relation = node_to_relations.get(start_node.id)
+    if relation:
+        names.append(relation.name)
+    return names
+
+
 def extract_ramp_name_by_node_relation(ramp: Ramp, node_to_relations: NodeRelationMap) -> list[str]:
     """Extract ramp name(s) by scanning all nodes in the ramp.
 

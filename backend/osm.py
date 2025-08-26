@@ -84,8 +84,8 @@ def query_overpass_api() -> dict | None:
     [out:json][timeout:60];
     area["name:en"="Taiwan"]->.taiwan;
     (
-      way["highway"="motorway_link"](area.taiwan);
       node["highway"="motorway_junction"](area.taiwan);
+      way["highway"="motorway_link"](area.taiwan);
       >;
     );
     out geom;

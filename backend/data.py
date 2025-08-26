@@ -44,6 +44,7 @@ from relation_operations import (
     build_weigh_way_relations,
     extract_ramp_name_by_end_node_relation,
     extract_ramp_name_by_node_relation,
+    extract_ramp_name_by_start_node_relation,
     extract_ramp_name_by_way_relation,
     wrap_adj_road_relation,
     wrap_junction_name_relation,
@@ -70,6 +71,8 @@ SPECIAL_ISOLATE_BRANCH_WAY_IDS: set[int] = {
     277512394,  # 左營端
     564743832,  # 左營端
     277512777,  # 左營端
+    1280474016,  # 大雅系統交流道
+    1281360457,  # 大雅系統交流道
 }
 
 # Explicit interchange name overrides when an interchange contains a way ID
@@ -86,10 +89,20 @@ WAY_TO_INTERCHANGE_NAME: dict[int, str] = {
     277512394: "左營端",
     564743832: "左營端",
     277512777: "左營端",
+    1280474016: "大雅系統交流道",
+    1281360457: "大雅系統交流道",
+    284976970: "汐止交流道;汐止系統交流道",
 }
 
 # Ignore specific nodes when extracting names (these should not name interchanges)
-IGNORED_NODE_IDS: set[int] = {1095916940, 623059692}  # 泰安服務區, 濱江街出口
+IGNORED_NODE_IDS: set[int] = {
+    1095916940,  # 泰安服務區
+    623059692,  # 濱江街出口
+    1489583190,  # 石碇服務區
+}
+
+# Exclude specific motorway_link ways entirely when building paths (data quirks, known bad)
+EXCLUDED_WAY_IDS: set[int] = {889406888}
 
 
 def isolate_interchanges_by_branch(
@@ -231,6 +244,7 @@ def annotate_ramp(
     way_to_relations: WayRelationMap | None = None,
     freeway_node_rel: NodeRelationMap | None = None,
     provincial_node_rel: NodeRelationMap | None = None,
+    junction_node_rel: NodeRelationMap | None = None,
     weigh_way_to_relations: WayRelationMap | None = None,
     endnode_adjacent_relations: NodeRelationMap | None = None,
 ) -> Ramp:
@@ -241,8 +255,7 @@ def annotate_ramp(
     4) end-node adjacent route relation (EXIT);
     5) generic OSM way relation (lowest, OSM).
     """
-    # original destination: weight station is already set before this func
-    all_destinations = list(ramp.destination)
+    all_destinations: list[Destination] = []
 
     # 1) weigh-station way relation (top priority)
     if not all_destinations and weigh_way_to_relations:
@@ -269,7 +282,14 @@ def annotate_ramp(
         adj_names = extract_ramp_name_by_end_node_relation(ramp, endnode_adjacent_relations)
         all_destinations.extend(Destination(name=n, type=DestinationType.EXIT) for n in adj_names)
 
-    # 5) generic way relation (lowest priority)
+    # 5) generic node relation by start node (junction names) just above generic way
+    if not all_destinations and junction_node_rel:
+        start_node_names = extract_ramp_name_by_start_node_relation(ramp, junction_node_rel)
+        all_destinations.extend(
+            Destination(name=n, type=DestinationType.OSM) for n in start_node_names
+        )
+
+    # 6) generic way relation (lowest priority)
     if not all_destinations and way_to_relations:
         way_names = extract_ramp_name_by_way_relation(ramp, way_to_relations)
         all_destinations.extend(Destination(name=n, type=DestinationType.OSM) for n in way_names)
@@ -407,21 +427,21 @@ def annotate_interchange_name(
     Annotate single interchange with proper name based on motorway_junction nodes
     If no junction name found, try to find nearby weigh stations within threshold distance
     """
-    # Derive junction name(s) via provided node relations
+    # Collect junction names (motorway_junction nodes)
     names: set[str] = set()
     for ramp in interchange.ramps:
         names.update(extract_ramp_name_by_node_relation(ramp, junction_node_rel))
-    if names:
-        interchange.name = ";".join(sorted(names))
-        return interchange
 
-    # Fallback: if no junction name, try weigh-station way relations
+    # Also include weigh-station names
     weigh_names: set[str] = set()
     for ramp in interchange.ramps:
         weigh_names.update(extract_ramp_name_by_way_relation(ramp, weigh_way_rel))
     if weigh_names:
         weigh_names = set(normalize_weigh_station_name(name) for name in weigh_names if name)
-        interchange.name = ";".join(sorted(weigh_names))
+
+    combined = sorted(set(n for n in list(names) + list(weigh_names) if n))
+    if combined:
+        interchange.name = ";".join(combined)
     return interchange
 
 
@@ -430,6 +450,7 @@ def annotate_interchange_ramps(
     way_to_relations: WayRelationMap | None = None,
     freeway_node_rel: NodeRelationMap | None = None,
     provincial_node_rel: NodeRelationMap | None = None,
+    junction_node_rel: NodeRelationMap | None = None,
     weigh_way_to_relations: WayRelationMap | None = None,
     endnode_adjacent_relations: NodeRelationMap | None = None,
     use_cache: bool = True,
@@ -442,6 +463,7 @@ def annotate_interchange_ramps(
             way_to_relations=way_to_relations,
             freeway_node_rel=freeway_node_rel,
             provincial_node_rel=provincial_node_rel,
+            junction_node_rel=junction_node_rel,
             weigh_way_to_relations=weigh_way_to_relations,
             endnode_adjacent_relations=endnode_adjacent_relations,
         )
@@ -480,7 +502,7 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     print("Getting Overpass data...")
     response = load_overpass(use_cache)
     ways = response.list_ways()
-    ways = [i for i in ways if is_way_access(i)]
+    ways = [i for i in ways if is_way_access(i) and i.id not in EXCLUDED_WAY_IDS]
     nodes = response.list_nodes()
     print(f"Loaded {len(ways)} motorway_link ways and {len(nodes)} motorway junction nodes")
 
@@ -574,6 +596,7 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
             way_to_relations=way_to_relations,
             freeway_node_rel=freeway_node_rel,
             provincial_node_rel=provincial_node_rel,
+            junction_node_rel=junction_node_rel,
             weigh_way_to_relations=weigh_way_rel,
             endnode_adjacent_relations=endnode_adjacent_relations,
             use_cache=use_cache,

@@ -137,7 +137,7 @@ def connect_ramps_by_nodes(ramps: list[Ramp]) -> list[Ramp]:
         return []
 
     # Build temporary graph with NetworkX
-    G = nx.DiGraph()
+    G = nx.MultiDiGraph()
     for r in ramps:
         s, e = r.get_endpoint_nodes()
         r.to_ramps = []
