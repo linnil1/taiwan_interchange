@@ -11,6 +11,7 @@ from graph_operations import (
     build_ordered_node_ids_for_relation,
     connect_ramps_by_nodes,
     contract_paths_to_ramps,
+    extract_branch_ways,
     extract_endpoint_ways,
     filter_endpoints_by_motorway_link,
     get_reverse_topological_order,
@@ -83,7 +84,6 @@ SPECIAL_ISOLATE_BRANCH_WAY_IDS: set[int] = {
 
 # Explicit interchange name overrides when an interchange contains a way ID
 WAY_TO_INTERCHANGE_NAME: dict[int, str] = {
-    534195515: "校前路交流道",
     247148858: "西螺交流道;西螺服務區",
     136861416: "高工局",
     260755985: "田寮地磅站",
@@ -101,6 +101,8 @@ WAY_TO_INTERCHANGE_NAME: dict[int, str] = {
     763190947: "樹林交流道",
     84618525: "羅東交流道",
     1174712096: "羅東交流道",
+    552542934: "高架道路汐止端",
+    202808793: "校前路交流道;楊梅休息站;楊梅端",
 }
 
 # Ignore specific nodes when extracting names (these should not name interchanges)
@@ -108,6 +110,8 @@ IGNORED_NODE_IDS: set[int] = {
     1095916940,  # 泰安服務區
     623059692,  # 濱江街出口
     1489583190,  # 石碇服務區
+    32615877,  # 五股轉接道
+    59840990,  # 楊梅端
 }
 
 # Exclude specific motorway_link ways entirely when building paths (data quirks, known bad)
@@ -648,6 +652,18 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     print(f"Found {len(freeway_endpoints)} freeway endpoint ways (pre-filter)")
     # We'll filter right before concatenation when motorway_link paths are available
 
+    # Also include branch ways from elevated freeway (not part of long connected components)
+    elev_resp = load_elevated_freeway_relation(use_cache)
+    elevated_wrapped = wrap_elevated_relation_as_route_master(elev_resp)
+    elevated_ways = extract_freeway_related_ways(elevated_wrapped)
+    elevated_paths = process_paths_from_ways(
+        elevated_ways, excluded_ids=None, duplicate_two_way=False
+    )
+    elevated_branches = extract_branch_ways(elevated_paths)
+    elevated_endpoints = extract_endpoint_ways(elevated_paths)
+    elevated_branches = concat_paths(elevated_branches, elevated_endpoints)
+    print(f"Found {len(elevated_branches)} elevated branch ways")
+
     print("Processing paths and ramps...")
     # Create dictionaries / mappings for efficient lookup
     node_dict = {node.id: node for node in nodes}
@@ -659,6 +675,11 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     # Filter freeway endpoints by motorway_link connectivity and then concatenate
     freeway_endpoints = filter_endpoints_by_motorway_link(freeway_endpoints, paths)
     paths = concat_paths(paths, freeway_endpoints)
+
+    # Add elevated branch ways to paths
+    if elevated_branches:
+        paths = concat_paths(paths, elevated_branches)
+        print(f"Added {len(elevated_branches)} elevated branch ways to paths")
 
     # Manually add preserved endpoint ways after the first concat
     preserved_paths = [p for p in freeway_paths if p.id in PRESERVED_ENDPOINT_WAY_IDS]
@@ -745,8 +766,6 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
 
     # Build master indices separately for freeway and elevated, then merge (freeway takes precedence)
     node_index = build_master_order_index(freeway_resp)
-    elev_resp = load_elevated_freeway_relation(use_cache)
-    elevated_wrapped = wrap_elevated_relation_as_route_master(elev_resp)
     elevated_index = build_master_order_index(elevated_wrapped)
     elevated_index.update(node_index)  # freeway index takes precedence
     node_index = elevated_index

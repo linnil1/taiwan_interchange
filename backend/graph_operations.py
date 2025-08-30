@@ -412,3 +412,115 @@ def connected_components_of_ways(ways: list[OverPassWay]) -> list[list[OverPassW
                 G.add_edge(way_list[i], way_list[j])
 
     return [[id_to_way[i] for i in comp] for comp in nx.connected_components(G)]
+
+
+def find_longest_connected_path(ways: list[Path]) -> list[Path]:
+    """Find the longest connected path from each connected component.
+
+    This creates a graph from the ways, finds all connected components,
+    and returns the longest simple path from each component efficiently.
+
+    Args:
+        ways: List of Path objects to analyze
+
+    Returns:
+        List of Path objects representing the longest paths from all components
+    """
+    if not ways:
+        return []
+
+    if len(ways) == 1:
+        return ways
+
+    # Build a graph where nodes are way IDs and edges connect ways that share endpoints
+    G = nx.Graph()
+    way_by_id: dict[int, Path] = {w.id: w for w in ways}
+
+    # Add all ways as nodes
+    for way in ways:
+        G.add_node(way.id)
+
+    # Add edges between ways that share endpoint nodes
+    endpoint_to_ways: dict[int, list[int]] = {}
+    for way in ways:
+        start_node = way.nodes[0].id
+        end_node = way.nodes[-1].id
+
+        for node_id in [start_node, end_node]:
+            if node_id not in endpoint_to_ways:
+                endpoint_to_ways[node_id] = []
+            endpoint_to_ways[node_id].append(way.id)
+
+    # Connect ways that share endpoint nodes
+    for node_id, way_ids in endpoint_to_ways.items():
+        for i in range(len(way_ids)):
+            for j in range(i + 1, len(way_ids)):
+                G.add_edge(way_ids[i], way_ids[j])
+
+    # Find all connected components
+    components = list(nx.connected_components(G))
+
+    all_longest_paths = []
+
+    # For each component, find the longest simple path efficiently
+    for component in components:
+        if len(component) == 1:
+            # Single way component
+            way_id = next(iter(component))
+            all_longest_paths.append(way_by_id[way_id])
+            continue
+
+        # Create subgraph for this component
+        subgraph = G.subgraph(component)
+
+        # Find nodes with degree 1 (endpoints) - these are natural start/end points
+        degree_1_nodes = [node for node in component if subgraph.degree(node) == 1]
+
+        longest_path = []
+        max_distance = 0
+
+        if len(degree_1_nodes) < 2:
+            raise ValueError("Not enough degree-1 nodes to find a path")
+
+        # Use degree-1 nodes to find the longest path
+        for i, start_node in enumerate(degree_1_nodes):
+            for j, end_node in enumerate(degree_1_nodes):
+                if i < j:  # Avoid duplicate pairs
+                    path = nx.shortest_path(subgraph, start_node, end_node)
+                    distance = len(path)
+                    if distance > max_distance:
+                        max_distance = distance
+                        longest_path = path
+
+        # Add the longest path ways from this component
+        component_longest_ways = [
+            way_by_id[way_id] for way_id in longest_path if way_id in way_by_id
+        ]
+        all_longest_paths.extend(component_longest_ways)
+
+    return all_longest_paths
+
+
+def extract_branch_ways(ways: list[Path]) -> list[Path]:
+    """Extract all ways that are NOT part of the longest connected paths.
+
+    This is the complement of finding the longest paths - it returns all
+    the "branch" ways that connect to but are not part of the main routes
+    in each connected component.
+
+    Args:
+        ways: List of Path objects to analyze
+
+    Returns:
+        List of Path objects that are branches (not in longest paths)
+    """
+    if not ways:
+        return []
+
+    longest_path_ways = find_longest_connected_path(ways)
+    longest_path_ids = {w.id for w in longest_path_ways}
+
+    # Return all ways that are not in the longest path
+    branch_ways = [w for w in ways if w.id not in longest_path_ids]
+
+    return branch_ways

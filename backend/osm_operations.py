@@ -202,7 +202,7 @@ def create_overpass_relation(
     tags_type: str,
     name: str,
     members: list[OverPassRelationMember],
-    ref: str = "1高架"
+    ref: str = "1高架",
 ) -> OverPassRelation:
     """Create an OverPassRelation with provided members and relation tag type.
 
