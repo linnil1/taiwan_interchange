@@ -272,3 +272,30 @@ def load_adjacent_road_relations(use_cache: bool = True) -> OverPassResponse:
     return load_or_fetch_overpass(
         "adjacent_road_relations_cache.json", query_adjacent_road_relations, use_cache=use_cache
     )
+
+
+# --- Special elevated freeway relation: 汐止-楊梅高架 (relation id: 9282022) ---
+def query_elevated_freeway_relation() -> dict | None:
+    """Query Overpass API for the special elevated freeway relation (id: 9282022)."""
+    overpass_url = "http://overpass-api.de/api/interpreter"
+
+    query = """
+    [out:json][timeout:60];
+    area["name:en"="Taiwan"]->.taiwan;
+    (
+      relation(id: 9282022);
+    );
+    >>;
+    out body;
+    """
+
+    response = requests.post(overpass_url, data={"data": query})
+    response.raise_for_status()
+    return response.json()
+
+
+def load_elevated_freeway_relation(use_cache: bool = True) -> OverPassResponse:
+    """Load the special elevated freeway relation (id: 9282022) from cache or Overpass API."""
+    return load_or_fetch_overpass(
+        "elevated_freeway_cache.json", query_elevated_freeway_relation, use_cache=use_cache
+    )

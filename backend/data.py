@@ -20,6 +20,7 @@ from osm import (
     OverPassRelation,
     OverPassResponse,
     load_adjacent_road_relations,
+    load_elevated_freeway_relation,
     load_freeway_routes,
     load_nearby_weigh_stations,
     load_overpass,
@@ -33,6 +34,7 @@ from osm_operations import (
     list_master_relations,
     normalize_weigh_station_name,
     process_relations_mapping,
+    wrap_elevated_relation_as_route_master,
 )
 from path_operations import (
     break_paths_by_endpoints,
@@ -741,7 +743,14 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
         if count > 1 or ";" in name:
             print(f"Special Interchange '{name}' count: {count}")
 
+    # Build master indices separately for freeway and elevated, then merge (freeway takes precedence)
     node_index = build_master_order_index(freeway_resp)
+    elev_resp = load_elevated_freeway_relation(use_cache)
+    elevated_wrapped = wrap_elevated_relation_as_route_master(elev_resp)
+    elevated_index = build_master_order_index(elevated_wrapped)
+    elevated_index.update(node_index)  # freeway index takes precedence
+    node_index = elevated_index
+
     interchanges = reorder_and_annotate_interchanges_by_node_index(interchanges, node_index)
 
     json_file_path = save_interchanges(interchanges)

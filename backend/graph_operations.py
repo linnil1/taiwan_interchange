@@ -370,3 +370,45 @@ def build_ordered_node_ids_for_relation(ways: list[OverPassWay]) -> dict[int, in
     path = [int(n) for n in nx.dfs_preorder_nodes(G, source=start)]
 
     return {nid: idx for idx, nid in enumerate(path)}
+
+
+def connected_components_of_ways(ways: list[OverPassWay]) -> list[list[OverPassWay]]:
+    """Return connected components of ways based on shared node ids.
+
+    Builds an undirected graph whose vertices are way ids and adds an edge
+    between two ways if they share at least one node id. Returns a list
+    of components as lists of OverPassWay objects.
+
+    Args:
+        ways: List of OverPassWay objects with populated `id` and `nodes`.
+
+    Returns:
+        A list of components, each component is a list of OverPassWay objects.
+    """
+    if not ways:
+        return []
+
+    # Map from node id -> list of way ids containing that node
+    node_to_way_ids: defaultdict[int, list[int]] = defaultdict(list)
+    way_ids: list[int] = []
+    id_to_way: dict[int, OverPassWay] = {}
+    for w in ways:
+        wid = int(w.id)
+        way_ids.append(wid)
+        id_to_way[wid] = w
+        for nid in getattr(w, "nodes", []) or []:
+            node_to_way_ids[int(nid)].append(wid)
+
+    G = nx.Graph()
+    for wid in way_ids:
+        G.add_node(wid)
+
+    for way_list in node_to_way_ids.values():
+        if len(way_list) < 2:
+            continue
+        # Fully connect all ways that share this node (clique on this subset)
+        for i in range(len(way_list)):
+            for j in range(i + 1, len(way_list)):
+                G.add_edge(way_list[i], way_list[j])
+
+    return [[id_to_way[i] for i in comp] for comp in nx.connected_components(G)]

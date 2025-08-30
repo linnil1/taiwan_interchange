@@ -9,7 +9,14 @@ This module provides:
 
 import re
 
-from osm import Coordinate, OverPassNode, OverPassRelation, OverPassResponse, OverPassWay
+from osm import (
+    Coordinate,
+    OverPassNode,
+    OverPassRelation,
+    OverPassRelationMember,
+    OverPassResponse,
+    OverPassWay,
+)
 
 
 def extract_to_destination(way: OverPassWay) -> list[str]:
@@ -188,3 +195,111 @@ def display_for_master(master: OverPassRelation) -> tuple[str, str]:
     ref = tags.get("ref") or tags.get("name") or f"master:{master.id}"
     name = tags.get("name") or ref
     return ref, name
+
+
+def create_overpass_relation(
+    relation_id: int,
+    tags_type: str,
+    name: str,
+    members: list[OverPassRelationMember],
+    ref: str = "1高架"
+) -> OverPassRelation:
+    """Create an OverPassRelation with provided members and relation tag type.
+
+    Args:
+        relation_id: Synthetic or real relation id.
+        tags_type: The relation type tag value, e.g., "route" or "route_master".
+        name: Relation name to set in tags.
+        members: Fully constructed OverPassRelationMember list (node/way/relation).
+    """
+    return OverPassRelation(
+        type="relation",
+        id=relation_id,
+        tags={
+            "type": tags_type,
+            "route": "road",
+            "network": "TW:freeway",
+            "name": name,
+            "ref": ref,
+        },
+        members=members,
+    )
+
+
+def wrap_elevated_relation_as_route_master(
+    response: OverPassResponse, south_way_id: int = 32429226
+) -> OverPassResponse:
+    """Wrap relation 9282022 (汐止-楊梅高架) into a synthetic route_master with two child routes.
+
+    Produces new relations and returns a new OverPassResponse including original nodes/ways
+    plus: one route_master and up to two child route relations split by connected components.
+    The child containing `south_way_id` is named with suffix "南下", the other "北上".
+    """
+    # Find the elevated relation
+    elevated_list = [rel for rel in response.list_relations() if rel.id == 9282022]
+    if not elevated_list:
+        return response
+    elevated = elevated_list[0]
+
+    ways_by_id = {w.id: w for w in response.list_ways()}
+    member_way_ids = [m.ref for m in elevated.members if m.type == "way" and m.ref in ways_by_id]
+    if not member_way_ids:
+        return response
+    member_ways = [ways_by_id[w] for w in member_way_ids]
+
+    # Build way connectivity via shared nodes using graph operations
+    from graph_operations import connected_components_of_ways
+
+    comps = connected_components_of_ways(member_ways)
+    if len(comps) != 2:
+        raise ValueError("Expected exactly two connected components in elevated relation")
+
+    south_comp_ways, north_comp_ways = comps[0], comps[1]
+    # Determine which component is southbound by presence of the known way id
+    south_in_first = any(int(w.id) == south_way_id for w in south_comp_ways)
+    south_in_second = any(int(w.id) == south_way_id for w in north_comp_ways)
+    if not south_in_first and south_in_second:
+        south_comp_ways, north_comp_ways = north_comp_ways, south_comp_ways
+
+    # Convert to id lists for relation member construction
+    south_comp = [int(w.id) for w in south_comp_ways]
+    north_comp = [int(w.id) for w in north_comp_ways]
+
+    base_name = (elevated.tags or {}).get("name", "汐止-楊梅高架")
+
+    # Assign synthetic ids unlikely to collide with real OSM ids
+    master_id = 9282022000
+    child_ids = [9282022001, 9282022002]
+
+    new_relations: list[OverPassRelation] = []
+    child_refs: list[int] = []
+    if south_comp:
+        south_members = [OverPassRelationMember(type="way", ref=wid, role="") for wid in south_comp]
+        south_rel = create_overpass_relation(
+            child_ids[0], "route", f"{base_name} 南下", south_members
+        )
+        new_relations.append(south_rel)
+        child_refs.append(south_rel.id)
+    if north_comp:
+        north_members = [OverPassRelationMember(type="way", ref=wid, role="") for wid in north_comp]
+        north_rel = create_overpass_relation(
+            child_ids[1], "route", f"{base_name} 北上", north_members
+        )
+        new_relations.append(north_rel)
+        child_refs.append(north_rel.id)
+
+    # Master relation referencing child relations
+    master_members = [
+        OverPassRelationMember(type="relation", ref=rid, role="") for rid in child_refs
+    ]
+    master_rel = create_overpass_relation(master_id, "route_master", base_name, master_members)
+    new_relations.append(master_rel)
+
+    # Compose new OverPassResponse with appended relations
+    new_elements = response.list_nodes() + response.list_ways() + new_relations
+    return OverPassResponse(
+        version=response.version,
+        generator=response.generator,
+        osm3s=response.osm3s,
+        elements=new_elements,
+    )
