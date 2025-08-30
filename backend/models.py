@@ -91,6 +91,7 @@ class Interchange(BaseModel):
     name: str
     bounds: Bounds
     ramps: list[Ramp]
+    refs: list[str] = []  # freeway route_master names that this interchange belongs to
 
     def list_nodes(self) -> list[Node]:
         """Get all nodes from all ramps in this interchange"""

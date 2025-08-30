@@ -173,3 +173,18 @@ def process_relations_mapping(
         result.append((relation, rel_ways, rel_nodes))
 
     return result
+
+
+def list_master_relations(response: OverPassResponse) -> list[OverPassRelation]:
+    """Return all route_master relations from response."""
+    return [
+        rel for rel in response.list_relations() if (rel.tags or {}).get("type") == "route_master"
+    ]
+
+
+def display_for_master(master: OverPassRelation) -> tuple[str, str]:
+    """Return (ref, name) for a master relation with fallbacks."""
+    tags = master.tags or {}
+    ref = tags.get("ref") or tags.get("name") or f"master:{master.id}"
+    name = tags.get("name") or ref
+    return ref, name

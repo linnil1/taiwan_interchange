@@ -71,8 +71,19 @@
 				tabindex="0"
 				onkeydown={(e) => e.key === 'Enter' && handleInterchangeClick(interchange)}
 			>
-				<div>
-					<div class="font-medium text-gray-800">#{interchange.id} {interchange.name}</div>
+				<div class="min-w-0">
+					<div class="font-medium text-gray-800 truncate">#{interchange.id} {interchange.name}</div>
+					{#if interchange.refs && interchange.refs.length}
+						<div class="mt-1 flex flex-wrap gap-1">
+							{#each interchange.refs as ref}
+								<span
+									class="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 border border-gray-200"
+								>
+									{ref}
+								</span>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			</div>
 		{/each}

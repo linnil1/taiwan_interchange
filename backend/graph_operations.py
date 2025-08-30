@@ -12,6 +12,7 @@ from collections import Counter, defaultdict, deque
 import networkx as nx
 
 from models import Path, Ramp
+from osm import OverPassWay
 from path_operations import can_paths_connect
 
 
@@ -321,3 +322,51 @@ def filter_endpoints_by_motorway_link(
         return True
 
     return [p for p in endpoints if keep(p)]
+
+
+def build_ordered_node_ids_for_relation(ways: list[OverPassWay]) -> dict[int, int]:
+    """Return an ordering map of node_id -> order index for a route relation's member ways.
+
+    Uses a NetworkX undirected graph built from consecutive nodes in each way to determine
+    a plausible linear chain.
+
+    Behavior changes:
+    - If the member ways produce multiple connected components, raise ValueError.
+    - If the single component has no endpoint node (degree 1), raise ValueError.
+    - Use DFS preorder only (no shortest-path fallback).
+    """
+    if not ways:
+        return {}
+
+    G = nx.Graph()
+    # Add edges between consecutive node ids for all member ways
+    for w in ways:
+        if not getattr(w, "nodes", None) or len(w.nodes) < 2:
+            continue
+        for a, b in zip(w.nodes, w.nodes[1:]):
+            G.add_edge(int(a), int(b))
+
+    if G.number_of_edges() == 0:
+        return {}
+
+    # Ensure a single component; error if multiple components found
+    comps = list(nx.connected_components(G))
+    if len(comps) > 1:
+        raise ValueError(
+            "Relation ways contain multiple connected components; cannot determine single ordering"
+        )
+
+    # Endpoints are nodes with degree 1 in this (single) component
+    endpoints = [n for n in G.nodes if len(list(G.neighbors(n))) == 1]
+
+    # Require at least one endpoint to determine a start; otherwise error
+    if not endpoints:
+        raise ValueError(
+            "No endpoint (degree-1) node found in relation; cannot determine start for ordering"
+        )
+
+    # Use DFS preorder from a deterministic start (smallest endpoint id)
+    start = int(min(endpoints))
+    path = [int(n) for n in nx.dfs_preorder_nodes(G, source=start)]
+
+    return {nid: idx for idx, nid in enumerate(path)}

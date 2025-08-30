@@ -64,6 +64,8 @@ export interface Interchange {
 	bounds: Bounds;
 	/** Array of ramps in this interchange */
 	ramps: Ramp[];
+	/** Freeway route_master names that this interchange belongs to */
+	refs: string[];
 }
 
 // Utility types for API responses
@@ -119,6 +121,8 @@ export function isInterchange(obj: any): obj is Interchange {
 		typeof obj.name === 'string' &&
 		isBounds(obj.bounds) &&
 		Array.isArray(obj.ramps) &&
-		obj.ramps.every(isRamp)
+		obj.ramps.every(isRamp) &&
+		Array.isArray(obj.refs) &&
+		obj.refs.every((s: any) => typeof s === 'string')
 	);
 }

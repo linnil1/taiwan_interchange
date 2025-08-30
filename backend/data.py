@@ -8,6 +8,7 @@ from sklearn.cluster import AgglomerativeClustering
 from graph_operations import (
     assign_branch_ids,
     build_dag_edges,
+    build_ordered_node_ids_for_relation,
     connect_ramps_by_nodes,
     contract_paths_to_ramps,
     extract_endpoint_ways,
@@ -16,6 +17,7 @@ from graph_operations import (
 )
 from models import Destination, DestinationType, Interchange, Node, Ramp
 from osm import (
+    OverPassRelation,
     OverPassResponse,
     load_adjacent_road_relations,
     load_freeway_routes,
@@ -25,8 +27,10 @@ from osm import (
     load_unknown_end_nodes,
 )
 from osm_operations import (
+    display_for_master,
     extract_freeway_related_ways,
     filter_weight_stations,
+    list_master_relations,
     normalize_weigh_station_name,
     process_relations_mapping,
 )
@@ -493,6 +497,122 @@ def build_exit_relation(response: OverPassResponse, road_type: str) -> NodeRelat
     return wrap_relation_to_node_relation(rel_tuples, road_type)
 
 
+def preferred_route_score(rel: OverPassRelation) -> tuple[int, str]:
+    """Score a route relation for selection under a master by name preference."""
+    name = (rel.tags or {}).get("name", "")
+    for idx, token in enumerate(["南向", "南下", "順向", "東向"]):
+        if token in name:
+            return (0, f"{idx}_{name}")
+    return (1, name)
+
+
+def get_preferred_route_for_master(
+    master: OverPassRelation, rel_by_id: dict[int, OverPassRelation]
+) -> OverPassRelation | None:
+    """Extract the preferred route relation for a master based on name preferences."""
+    member_route_ids = [m.ref for m in master.members if m.type == "relation"]
+    candidates: list[OverPassRelation] = [
+        rel_by_id[rid]
+        for rid in member_route_ids
+        if rid in rel_by_id and (rel_by_id[rid].tags or {}).get("type") == "route"
+    ]
+    if not candidates:
+        return None
+    # Choose preferred route by name tokens
+    candidates.sort(key=preferred_route_score)
+    if preferred_route_score(candidates[0])[0] == 1 or preferred_route_score(candidates[1])[0] == 0:
+        for cd in candidates:
+            print(cd.tags)
+        raise ValueError(f"No preferred route found for master {master.id}")
+    print(f"Choose {candidates[0].tags['name']}")
+    return candidates[0]
+
+
+def build_master_order_index(
+    response: OverPassResponse,
+) -> dict[int, tuple[str, int, str]]:
+    """Build a global node index for freeway masters.
+
+    Returns dict[node_id, (ref, order, name)] where:
+    - ref: master tags.ref if present, else master tags.name, else f"master:{id}"
+    - order: index along the selected member route's ordered nodes
+    - name: master tags.name if present, else ref string
+
+    Constraints: Only uses list_master_relations, process_relations_mapping, and
+    build_ordered_node_ids_for_relation.
+    """
+    # Map relation id -> its member ways (for route relations)
+    rel_tuples = process_relations_mapping(response)
+    route_rel_ways: dict[int, list] = {}
+    rel_by_id: dict[int, OverPassRelation] = {}
+    for rel, ways, _ in rel_tuples:  # _nodes not used, so ignore it
+        rel_by_id[rel.id] = rel
+        if (rel.tags or {}).get("type") == "route":
+            route_rel_ways[rel.id] = ways
+
+    node_index: dict[int, tuple[str, int, str]] = {}
+
+    masters = list_master_relations(response)
+    # Process masters in ref order for stability
+    for master in masters:
+        chosen = get_preferred_route_for_master(master, rel_by_id)
+        if not chosen:
+            raise ValueError(f"No route found for master {master.id}")
+        ways = route_rel_ways.get(chosen.id, [])
+        if not ways:
+            raise ValueError(f"No ways found for route {chosen.id}")
+        ordered = build_ordered_node_ids_for_relation(ways)
+        if not ordered:
+            continue
+        mref, mname = display_for_master(master)
+
+        # Merge into global index
+        for nid, order in ordered.items():
+            new_val = (mref, int(order), mname)
+            node_index[nid] = new_val
+    return node_index
+
+
+def reorder_and_annotate_interchanges_by_node_index(
+    interchanges: list[Interchange],
+    node_index: dict[int, tuple[str, int, str]],
+) -> list[Interchange]:
+    """Reorder and annotate interchanges based on node_index, sorting by master reference and node order.
+
+    This function processes a list of Interchange objects by:
+    - Annotating each interchange's `refs` list with unique master names from nodes in the interchange.
+    - Determining the minimum order for each interchange based on the node_index.
+    - Sorting the interchanges by their minimum order (master ref, order, master name).
+    - Renumbering the sorted interchanges using renumber_interchanges.
+    """
+    if not interchanges or not node_index:
+        return interchanges
+
+    # Create a dictionary for quick interchange lookup by id
+    interchanges = renumber_interchanges(interchanges)
+    ic_dict = {ic.id: ic for ic in interchanges}
+
+    # Annotate refs and track min order for each interchange, keyed by interchange id
+    ic_min_index: dict[int, tuple[str, int, str]] = {}
+    for ic in interchanges:
+        for n in ic.list_nodes():
+            if n.id not in node_index:
+                continue
+            mref, morder, mname = node_index[n.id]
+            if mname not in ic.refs:
+                ic.refs.append(mname)
+            # Update min order for sorting
+            current = ic_min_index.get(ic.id)
+            index = (mref, morder, mname)
+            if current is None or current > index:
+                ic_min_index[ic.id] = index
+
+    interchanges = sorted(
+        interchanges, key=lambda ic: ic_min_index.get(ic.id, ("ZZZZZZZZZ", 0, ""))
+    )
+    return renumber_interchanges(interchanges)
+
+
 def generate_interchanges_json(use_cache: bool = True) -> bool:
     """
     The main function:
@@ -611,6 +731,9 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     for name, count in counter.items():
         if count > 1 or ";" in name:
             print(f"Special Interchange '{name}' count: {count}")
+
+    node_index = build_master_order_index(freeway_resp)
+    interchanges = reorder_and_annotate_interchanges_by_node_index(interchanges, node_index)
 
     json_file_path = save_interchanges(interchanges)
     print(f"Successfully saved interchanges to {json_file_path}")

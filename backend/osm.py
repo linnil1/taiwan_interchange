@@ -101,13 +101,14 @@ def query_freeway_routes() -> dict | None:
     overpass_url = "http://overpass-api.de/api/interpreter"
 
     query = """
-    [out:json][timeout:60];
-    area["name:en"="Taiwan"]->.taiwan;
-    (
-      relation["type"="route"]["network"="TW:freeway"](area.taiwan);
-      >;
-    );
-    out body;
+        [out:json][timeout:60];
+        area["name:en"="Taiwan"]->.taiwan;
+        (
+            relation["type"="route"]["network"="TW:freeway"](area.taiwan) -> .freeway;
+            relation(br.freeway)["type"="route_master"] -> .master;
+        );
+        >>;
+        out body;
     """
 
     response = requests.post(overpass_url, data={"data": query})
