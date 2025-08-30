@@ -8,12 +8,14 @@
 		selectedInterchange = $bindable(null),
 		interchanges = [],
 		onInterchangeSelect,
-		selectedRampIndex = $bindable(null)
+		selectedRampIndex = $bindable(null),
+		fitRampIndex = $bindable(null)
 	}: {
 		selectedInterchange: Interchange | null;
 		interchanges: Interchange[];
 		onInterchangeSelect?: (interchange: Interchange) => void;
 		selectedRampIndex?: number | null;
+		fitRampIndex?: number | null;
 	} = $props();
 
 	let map: LeafletMap;
@@ -67,6 +69,18 @@
 		setTimeout(() => {
 			updateSelectedInterchange(false); // Redraw with new selection
 		}, 0);
+	});
+
+	// Fit to ramp when fitRampIndex changes
+	$effect(() => {
+		if (fitRampIndex !== null) {
+			console.log('Fit ramp index updated', fitRampIndex);
+			setTimeout(() => {
+				fitToRamp(fitRampIndex);
+				// Reset fitRampIndex after fitting
+				fitRampIndex = null;
+			}, 0);
+		}
 	});
 
 	function clearSelectedPaths() {
@@ -220,9 +234,6 @@
 			map.fitBounds(bounds, { padding: [30, 30] });
 		}
 	}
-
-	// Export the fitToRamp function so parent can access it
-	export { fitToRamp };
 </script>
 
 <div bind:this={mapContainer} class="w-full h-full relative"></div>

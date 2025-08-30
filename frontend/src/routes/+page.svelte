@@ -2,45 +2,31 @@
 	import Map from '$lib/components/Map.svelte';
 	import InterchangeList from '$lib/components/InterchangeList.svelte';
 	import InterchangeDetail from '$lib/components/InterchangeDetail.svelte';
+	import SearchComponent from '$lib/components/SearchComponent.svelte';
 	import { interchangesStore, fetchInterchanges } from '$lib/stores/interchanges.js';
 	import type { Interchange } from '$lib/types.js';
 
 	let selectedInterchange: Interchange | null = $state(null);
 	let selectedRampIndex: number | null = $state(null);
 	let searchTerm: string = $state('');
-	let mapComponent: any = $state(null);
+	let fitRampIndex: number | null = $state(null);
+	let filteredInterchanges: Interchange[] = $state([]);
 
 	// Fetch interchanges on mount
 	$effect(() => {
 		fetchInterchanges();
 	});
 
-	// Derive filtered interchanges from store and search term
-	let filteredInterchanges = $derived(
-		$interchangesStore && searchTerm !== undefined
-			? $interchangesStore.filter(
-					(interchange: Interchange) =>
-						interchange.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-						String(interchange.id).includes(searchTerm)
-				)
-			: $interchangesStore || []
-	);
-
 	function selectInterchange(interchange: Interchange) {
 		selectedInterchange = interchange;
 		selectedRampIndex = null; // Reset ramp selection when changing interchange
-		// Update current index
+		fitRampIndex = null; // Reset fit ramp index when changing interchange
 	}
 
 	function clearSelection() {
 		selectedInterchange = null;
 		selectedRampIndex = null;
-	}
-
-	function handleFitToRamp(rampIndex: number) {
-		if (mapComponent && mapComponent.fitToRamp) {
-			mapComponent.fitToRamp(rampIndex);
-		}
+		fitRampIndex = null;
 	}
 </script>
 
@@ -50,11 +36,15 @@
 </svelte:head>
 
 <div class="flex h-screen font-sans">
-	<!-- Left Sidebar - Interchange List component -->
+	<!-- Left Sidebar - Search and Interchange List components -->
 	<div class="w-80 flex flex-col bg-white border-r border-gray-300">
+		<SearchComponent
+			interchanges={$interchangesStore || []}
+			bind:searchTerm
+			bind:filteredInterchanges
+		/>
 		<InterchangeList
 			interchanges={filteredInterchanges}
-			bind:searchTerm
 			{selectedInterchange}
 			onSelectInterchange={selectInterchange}
 		/>
@@ -66,16 +56,16 @@
 			interchange={selectedInterchange}
 			onClose={clearSelection}
 			bind:selectedRampIndex
-			onFitToRamp={handleFitToRamp}
+			bind:fitRampIndex
 		/>
 	{/if}
 
 	<!-- Map Container -->
 	<div class="flex-1 relative">
 		<Map
-			bind:this={mapComponent}
 			bind:selectedInterchange
 			bind:selectedRampIndex
+			bind:fitRampIndex
 			interchanges={filteredInterchanges}
 			onInterchangeSelect={selectInterchange}
 		/>

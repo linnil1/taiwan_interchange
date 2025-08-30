@@ -5,12 +5,12 @@
 		interchange,
 		onClose,
 		selectedRampIndex = $bindable(null),
-		onFitToRamp
+		fitRampIndex = $bindable(null)
 	}: {
 		interchange: Interchange;
 		onClose: () => void;
 		selectedRampIndex?: number | null;
-		onFitToRamp?: (rampIndex: number) => void;
+		fitRampIndex?: number | null;
 	} = $props();
 
 	let rampElements: HTMLElement[] = [];
@@ -48,6 +48,15 @@
 
 		return { fromRamps, toRamps };
 	}
+
+	// Helper function to format ramp display name
+	function getRampDisplayName(ramp: any) {
+		if (ramp.destination && ramp.destination.length > 0) {
+			const destinationNames = ramp.destination.map((d: any) => d.name).join(', ');
+			return `${destinationNames} #${ramp.id}`;
+		}
+		return `Ramp ${ramp.id}`;
+	}
 </script>
 
 <div class="w-96 bg-white border-r border-gray-300 overflow-y-auto">
@@ -68,6 +77,7 @@
 
 	<div class="p-4">
 		<!-- Bounds Info -->
+		<!--
 		<div class="mb-4 p-3 bg-gray-50 rounded text-xs">
 			<strong>Bounds:</strong>
 			<br />
@@ -75,10 +85,10 @@
 			<br />
 			Lng: {interchange.bounds.min_lng.toFixed(6)} to {interchange.bounds.max_lng.toFixed(6)}
 		</div>
+		-->
 
 		<!-- Ramps List -->
 		<div>
-			<h3 class="font-semibold text-gray-700 mb-3">Ramps:</h3>
 			{#each interchange.ramps as ramp, i}
 				<div
 					bind:this={rampElements[i]}
@@ -102,17 +112,17 @@
 								? 'text-blue-700'
 								: ''} flex items-center"
 						>
-							Ramp {ramp.id}
+							{getRampDisplayName(ramp)}
 							<span class="ml-2 text-xs text-gray-400">
 								{selectedRampIndex === i ? '👁️' : ''}
 							</span>
-							{#if selectedRampIndex === i && onFitToRamp}
+							{#if selectedRampIndex === i}
 								<button
 									type="button"
 									class="ml-2 text-blue-500 hover:text-blue-700 transition-colors"
 									onclick={(e) => {
 										e.stopPropagation();
-										onFitToRamp(i);
+										fitRampIndex = i;
 									}}
 									title="Zoom to ramp"
 								>
@@ -137,7 +147,7 @@
 										navigateToRamp(fromRamp.id);
 									}}
 								>
-									← Ramp {fromRamp.id}
+									← {getRampDisplayName(fromRamp)}
 								</button>
 							{/each}
 							{#each connections.toRamps as toRamp}
@@ -149,12 +159,14 @@
 										navigateToRamp(toRamp.id);
 									}}
 								>
-									Ramp {toRamp.id} →
+									{getRampDisplayName(toRamp)} →
 								</button>
 							{/each}
 						</div>
 					{/if}
 
+					<!--
+					Debug use
 					<div class="text-sm text-gray-600 mb-2">
 						<strong>To:</strong>
 						{#if ramp.destination.length > 0}
@@ -172,6 +184,7 @@
 							Unknown
 						{/if}
 					</div>
+					-->
 
 					<!-- Paths within ramp -->
 					<div class="ml-2">

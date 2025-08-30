@@ -1,17 +1,15 @@
 <script lang="ts">
 	import type { Interchange } from '$lib/types.js';
 
-	// Svelte 5 runes: props + bindable local state for search
+	// Svelte 5 runes: props for filtered interchanges
 	let {
 		interchanges = [],
 		selectedInterchange = null,
-		onSelectInterchange,
-		searchTerm = $bindable('')
+		onSelectInterchange
 	} = $props<{
 		interchanges: Interchange[];
 		selectedInterchange: Interchange | null;
 		onSelectInterchange: (interchange: Interchange) => void;
-		searchTerm: string;
 	}>();
 
 	let listContainer: HTMLDivElement;
@@ -38,26 +36,8 @@
 </script>
 
 <div class="h-full overflow-y-auto bg-white" bind:this={listContainer}>
-	<div class="bg-gray-100 p-3 border-b border-gray-300 sticky top-0">
-		<div class="font-bold">
-			Interchanges {searchTerm ? `(filtered: ${interchanges.length})` : `(${interchanges.length})`}
-		</div>
-		<input
-			class="mt-2 w-full rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-			type="search"
-			placeholder="Search by name or #id"
-			bind:value={searchTerm}
-		/>
-	</div>
-
 	{#if interchanges.length === 0}
-		{#if searchTerm}
-			<div class="p-5 text-center text-gray-600 italic">
-				No interchanges found matching "{searchTerm}"
-			</div>
-		{:else}
-			<div class="p-5 text-center text-gray-600">Loading interchanges...</div>
-		{/if}
+		<div class="p-5 text-center text-gray-600">Loading interchanges...</div>
 	{:else}
 		{#each interchanges as interchange}
 			<div

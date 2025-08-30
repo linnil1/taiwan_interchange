@@ -194,7 +194,8 @@ def display_for_master(master: OverPassRelation) -> tuple[str, str]:
     tags = master.tags or {}
     ref = tags.get("ref") or tags.get("name") or f"master:{master.id}"
     name = tags.get("name") or ref
-    return ref, name
+    alt_name = tags.get("alt_name", "")
+    return ref, name + (("/" + alt_name) if alt_name else "")
 
 
 def create_overpass_relation(
