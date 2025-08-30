@@ -95,6 +95,10 @@ WAY_TO_INTERCHANGE_NAME: dict[int, str] = {
     277512777: "左營端",
     1280474016: "大雅系統交流道",
     1281360457: "大雅系統交流道",
+    692642782: "樹林交流道",
+    763190947: "樹林交流道",
+    84618525: "羅東交流道",
+    1174712096: "羅東交流道",
 }
 
 # Ignore specific nodes when extracting names (these should not name interchanges)
@@ -106,6 +110,9 @@ IGNORED_NODE_IDS: set[int] = {
 
 # Exclude specific motorway_link ways entirely when building paths (data quirks, known bad)
 EXCLUDED_WAY_IDS: set[int] = set()
+
+# Preserve these freeway endpoint ways even if they fail the connectivity filter
+PRESERVED_ENDPOINT_WAY_IDS: set[int] = {439876652, 439876651}  # 機場端
 
 
 def isolate_interchanges_by_branch(
@@ -650,9 +657,11 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     # Filter freeway endpoints by motorway_link connectivity and then concatenate
     freeway_endpoints = filter_endpoints_by_motorway_link(freeway_endpoints, paths)
     paths = concat_paths(paths, freeway_endpoints)
-    print(
-        f"Found {len(paths)} total paths (motorway_link + freeway endpoints) and {len(nodes)} motorway junctions"
-    )
+
+    # Manually add preserved endpoint ways after the first concat
+    preserved_paths = [p for p in freeway_paths if p.id in PRESERVED_ENDPOINT_WAY_IDS]
+    if preserved_paths:
+        paths = concat_paths(paths, preserved_paths)
 
     # Group paths into ramps
     paths = break_paths_by_endpoints(paths)
