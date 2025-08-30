@@ -327,37 +327,36 @@ def filter_endpoints_by_motorway_link(
 def build_ordered_node_ids_for_relation(ways: list[OverPassWay]) -> dict[int, int]:
     """Return an ordering map of node_id -> order index for a route relation's member ways.
 
-    Uses a NetworkX undirected graph built from consecutive nodes in each way to determine
-    a plausible linear chain.
+    Uses a NetworkX directed graph built from consecutive nodes in each way to determine
+    a plausible linear chain, then converts to undirected for component analysis.
 
     Behavior changes:
     - If the member ways produce multiple connected components, raise ValueError.
-    - If the single component has no endpoint node (degree 1), raise ValueError.
+    - If the single component has no endpoint node (in_degree 0), raise ValueError.
     - Use DFS preorder only (no shortest-path fallback).
+    - Start from the endpoint node with in_degree == 0; if multiple, use the smallest node ID.
     """
     if not ways:
         return {}
 
-    G = nx.Graph()
+    G = nx.DiGraph()
+
     # Add edges between consecutive node ids for all member ways
     for w in ways:
-        if not getattr(w, "nodes", None) or len(w.nodes) < 2:
+        if len(w.nodes) < 2:
             continue
-        for a, b in zip(w.nodes, w.nodes[1:]):
-            G.add_edge(int(a), int(b))
-
-    if G.number_of_edges() == 0:
-        return {}
+        for node1, node2 in zip(w.nodes[:-1], w.nodes[1:]):
+            G.add_edge(int(node1), int(node2))
 
     # Ensure a single component; error if multiple components found
-    comps = list(nx.connected_components(G))
+    comps = list(nx.connected_components(G.to_undirected()))
     if len(comps) > 1:
         raise ValueError(
             "Relation ways contain multiple connected components; cannot determine single ordering"
         )
 
     # Endpoints are nodes with degree 1 in this (single) component
-    endpoints = [n for n in G.nodes if len(list(G.neighbors(n))) == 1]
+    endpoints = [n for n in G.nodes if G.in_degree(n) == 0]
 
     # Require at least one endpoint to determine a start; otherwise error
     if not endpoints:
@@ -365,9 +364,8 @@ def build_ordered_node_ids_for_relation(ways: list[OverPassWay]) -> dict[int, in
             "No endpoint (degree-1) node found in relation; cannot determine start for ordering"
         )
 
-    # Use DFS preorder from a deterministic start (smallest endpoint id)
-    start = int(min(endpoints))
-    path = [int(n) for n in nx.dfs_preorder_nodes(G, source=start)]
+    # Use DFS preorder from the chosen start
+    path = [int(n) for n in nx.dfs_preorder_nodes(G, source=min(endpoints))]
 
     return {nid: idx for idx, nid in enumerate(path)}
 

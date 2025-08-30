@@ -82,6 +82,12 @@ SPECIAL_ISOLATE_BRANCH_WAY_IDS: set[int] = {
     1281360457,  # 大雅系統交流道
 }
 
+# Delete entire interchanges that contain these specific way IDs
+DELETE_INTERCHANGE_WAY_IDS: set[int] = {
+    391862272,  # 第二貨櫃中心
+    642611481,  # 過港隧道
+}
+
 # Explicit interchange name overrides when an interchange contains a way ID
 WAY_TO_INTERCHANGE_NAME: dict[int, str] = {
     247148858: "西螺交流道;西螺服務區",
@@ -111,6 +117,7 @@ IGNORED_NODE_IDS: set[int] = {
     623059692,  # 濱江街出口
     1489583190,  # 石碇服務區
     32615877,  # 五股轉接道
+    260240394,  # 五股轉接道
     59840990,  # 楊梅端
 }
 
@@ -164,6 +171,37 @@ def isolate_interchanges_by_branch(
     # Renumber and return combined list
     combined = result + new_interchanges
     return renumber_interchanges(combined)
+
+
+def delete_interchanges_containing_ways(
+    interchanges: list[Interchange], delete_way_ids: set[int]
+) -> list[Interchange]:
+    """
+    Delete entire interchanges that contain any of the specified way IDs.
+
+    Args:
+        interchanges: List of interchanges to filter
+        delete_way_ids: Set of way IDs that should trigger interchange deletion
+
+    Returns:
+        Filtered list of interchanges with matching interchanges removed
+    """
+    filtered_interchanges: list[Interchange] = []
+
+    for ic in interchanges:
+        # Check if this interchange contains any of the deletion way IDs
+        should_delete = False
+        for way_id in delete_way_ids:
+            if ramp_contains_way(ic.ramps, way_id):
+                should_delete = True
+                print(f"Deleting interchange {ic.id} ({ic.name}) - contains way {way_id}")
+                break
+
+        if not should_delete:
+            filtered_interchanges.append(ic)
+
+    # Renumber the remaining interchanges to maintain sequential IDs
+    return renumber_interchanges(filtered_interchanges)
 
 
 def override_interchange_names_by_way(
@@ -521,35 +559,50 @@ def preferred_route_score(rel: OverPassRelation) -> tuple[int, str]:
 
 def get_preferred_route_for_master(
     master: OverPassRelation, rel_by_id: dict[int, OverPassRelation]
-) -> OverPassRelation | None:
-    """Extract the preferred route relation for a master based on name preferences."""
+) -> tuple[OverPassRelation, OverPassRelation]:
+    """Extract the two preferred route relations for a master based on name preferences.
+
+    Returns:
+        Tuple of (primary_route, secondary_route) where primary has higher priority
+    """
     member_route_ids = [m.ref for m in master.members if m.type == "relation"]
     candidates: list[OverPassRelation] = [
         rel_by_id[rid]
         for rid in member_route_ids
         if rid in rel_by_id and (rel_by_id[rid].tags or {}).get("type") == "route"
     ]
-    if not candidates:
-        return None
+
+    # Assert that there are always exactly two candidates
+    assert len(candidates) == 2, (
+        f"Expected exactly 2 route candidates for master {master.id}, got {len(candidates)}"
+    )
+
     # Choose preferred route by name tokens
     candidates.sort(key=preferred_route_score)
-    if preferred_route_score(candidates[0])[0] == 1 or preferred_route_score(candidates[1])[0] == 0:
-        for cd in candidates:
-            print(cd.tags)
+
+    primary = candidates[0]
+    secondary = candidates[1]
+
+    if preferred_route_score(primary)[0] == 1 or preferred_route_score(secondary)[0] == 0:
         raise ValueError(f"No preferred route found for master {master.id}")
-    print(f"Choose {candidates[0].tags['name']}")
-    return candidates[0]
+
+    print(f"Choose primary: {primary.tags['name']}, secondary: {secondary.tags['name']}")
+    return primary, secondary
 
 
 def build_master_order_index(
     response: OverPassResponse,
 ) -> dict[int, tuple[str, int, str]]:
-    """Build a global node index for freeway masters.
+    """Build a global node index for freeway masters using both primary and secondary routes.
 
     Returns dict[node_id, (ref, order, name)] where:
     - ref: master tags.ref if present, else master tags.name, else f"master:{id}"
     - order: index along the selected member route's ordered nodes
     - name: master tags.name if present, else ref string
+
+    Processing order:
+    1. Primary routes are processed first and take precedence
+    2. Secondary routes are processed second and only add nodes not already present
 
     Constraints: Only uses list_master_relations, process_relations_mapping, and
     build_ordered_node_ids_for_relation.
@@ -568,21 +621,35 @@ def build_master_order_index(
     masters = list_master_relations(response)
     # Process masters in ref order for stability
     for master in masters:
-        chosen = get_preferred_route_for_master(master, rel_by_id)
-        if not chosen:
-            raise ValueError(f"No route found for master {master.id}")
-        ways = route_rel_ways.get(chosen.id, [])
+        primary, secondary = get_preferred_route_for_master(master, rel_by_id)
+
+        # Process primary route (higher priority)
+        ways = route_rel_ways.get(primary.id, [])
         if not ways:
-            raise ValueError(f"No ways found for route {chosen.id}")
-        ordered = build_ordered_node_ids_for_relation(ways)
-        if not ordered:
-            continue
+            raise ValueError(f"No ways found for primary route {primary.id}")
+        # Process secondary route (lower priority)
+        ways_secondary = route_rel_ways.get(secondary.id, [])
+        if not ways_secondary:
+            raise ValueError(f"No ways found for secondary route {secondary.id}")
+
         mref, mname = display_for_master(master)
 
-        # Merge into global index
-        for nid, order in ordered.items():
-            new_val = (mref, int(order), mname)
-            node_index[nid] = new_val
+        ordered = build_ordered_node_ids_for_relation(ways)
+        if not ordered:
+            raise ValueError(f"No ordered nodes found for primary route {primary.id}")
+
+        ordered_secondary = build_ordered_node_ids_for_relation(ways_secondary)
+        if not ordered_secondary:
+            raise ValueError(f"No ordered nodes found for secondary route {secondary.id}")
+
+        last_order = max(ordered.values(), default=0)
+
+        # Merge into global index only if not already present (primary takes precedence)
+        for i, order in ordered_secondary.items():
+            node_index[i] = mref, int(order) + last_order + 1, mname
+        for i, order in ordered.items():
+            node_index[i] = (mref, int(order), mname)
+
     return node_index
 
 
@@ -603,7 +670,6 @@ def reorder_and_annotate_interchanges_by_node_index(
 
     # Create a dictionary for quick interchange lookup by id
     interchanges = renumber_interchanges(interchanges)
-    ic_dict = {ic.id: ic for ic in interchanges}
 
     # Annotate refs and track min order for each interchange, keyed by interchange id
     ic_min_index: dict[int, tuple[str, int, str]] = {}
@@ -763,6 +829,9 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     for name, count in counter.items():
         if count > 1 or ";" in name:
             print(f"Special Interchange '{name}' count: {count}")
+
+    interchanges = delete_interchanges_containing_ways(interchanges, DELETE_INTERCHANGE_WAY_IDS)
+    print(f"After filtering: {len(interchanges)} interchanges")
 
     # Build master indices separately for freeway and elevated, then merge (freeway takes precedence)
     node_index = build_master_order_index(freeway_resp)
