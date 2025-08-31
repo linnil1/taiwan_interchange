@@ -48,6 +48,7 @@
 	},
 	"dependencies": {
 		"@inlang/paraglide-js": "^2.0.0",
-		"leaflet": "^1.9.4"
+		"leaflet": "^1.9.4",
+		"lucide-svelte": "^0.542.0"
 	}
 }

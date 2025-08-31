@@ -43,11 +43,28 @@
 			bind:searchTerm
 			bind:filteredInterchanges
 		/>
-		<InterchangeList
-			interchanges={filteredInterchanges}
-			{selectedInterchange}
-			onSelectInterchange={selectInterchange}
-		/>
+		<div class="flex-1 overflow-hidden">
+			<InterchangeList
+				interchanges={filteredInterchanges}
+				{selectedInterchange}
+				onSelectInterchange={selectInterchange}
+			/>
+		</div>
+		<!-- Project Info Footer -->
+		<div class="border-t border-gray-300 px-3 py-2 bg-gray-50">
+			<div class="flex items-center justify-between text-xs">
+				<div>
+					<span class="font-semibold text-gray-800">Taiwan Interchange Explorer</span>
+					<span class="text-gray-600 ml-1">by <strong>linnil1</strong></span>
+				</div>
+				<a
+					href="/about"
+					class="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+				>
+					About
+				</a>
+			</div>
+		</div>
 	</div>
 
 	<!-- Detail Sidebar (appears when item selected) -->
