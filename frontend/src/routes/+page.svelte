@@ -5,6 +5,7 @@
 	import SearchComponent from '$lib/components/SearchComponent.svelte';
 	import { interchangesStore, fetchInterchanges } from '$lib/stores/interchanges.js';
 	import type { Interchange } from '$lib/types.js';
+	import { Info } from 'lucide-svelte';
 
 	let selectedInterchange: Interchange | null = $state(null);
 	let selectedRampIndex: number | null = $state(null);
@@ -59,8 +60,9 @@
 				</div>
 				<a
 					href="/about"
-					class="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+					class="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center gap-1"
 				>
+					<Info size={14} />
 					About
 				</a>
 			</div>

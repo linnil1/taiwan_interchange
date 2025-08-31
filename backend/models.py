@@ -36,10 +36,48 @@ class DestinationType(str, Enum):
     OSM = "OSM"  # OSM proivded
 
 
-class Destination(BaseModel):
+class RelationType(str, Enum):
+    RELATION = "RELATION"  # OSM relation
+    WAY = "WAY"  # OSM way
+    NODE = "NODE"  # OSM node
+
+
+class RoadType(str, Enum):
+    FREEWAY = "freeway"
+    PROVINCIAL = "provincial"
+    WEIGH = "weigh"
+    NORMAL = "normal"
+    DESTINATION = "destination"
+    WAY = "way"
+    JUNCTION = "junction"
+
+
+class Relation(BaseModel):
+    """Represents a road relation with name and road type"""
+
+    id: int  # OSM relation id
     name: str
-    type: DestinationType
+    road_type: RoadType
+    relation_type: RelationType
     model_config = ConfigDict(frozen=True)
+
+
+class Destination(Relation):
+    """Represents a destination that inherits from Relation"""
+
+    destination_type: DestinationType
+    model_config = ConfigDict(frozen=True)
+
+    @classmethod
+    def from_relation(cls, relation: Relation, destination_type: DestinationType) -> "Destination":
+        """Create a Destination from a Relation and destination type"""
+        return cls(
+            id=relation.id,
+            name=relation.name,
+            road_type=relation.road_type,
+            relation_type=relation.relation_type,
+            destination_type=destination_type,
+        )
 
 
 class Ramp(BaseModel):
@@ -77,13 +115,6 @@ class Bounds(BaseModel):
     max_lng: float
 
 
-class Relation(BaseModel):
-    """Represents a road relation with name and road type"""
-
-    name: str
-    road_type: str  # "freeway", "provincial", or "unknown"
-
-
 class Interchange(BaseModel):
     """Represents an interchange with multiple ramps"""
 
@@ -91,7 +122,7 @@ class Interchange(BaseModel):
     name: str
     bounds: Bounds
     ramps: list[Ramp]
-    refs: list[str] = []  # freeway route_master names that this interchange belongs to
+    refs: list[Relation] = []  # freeway route_master relations that this interchange belongs to
 
     def list_nodes(self) -> list[Node]:
         """Get all nodes from all ramps in this interchange"""

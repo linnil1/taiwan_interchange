@@ -16,7 +16,16 @@ from graph_operations import (
     filter_endpoints_by_motorway_link,
     get_reverse_topological_order,
 )
-from models import Destination, DestinationType, Interchange, Node, Ramp
+from models import (
+    Destination,
+    DestinationType,
+    Interchange,
+    Node,
+    Ramp,
+    Relation,
+    RelationType,
+    RoadType,
+)
 from osm import (
     OverPassRelation,
     OverPassResponse,
@@ -242,15 +251,15 @@ def annotate_ramps_by_propagating(ramps: list[Ramp]) -> list[Ramp]:
 
         if collected:
             # If both EXIT and ENTER exist among downstream destinations, propagate only EXIT
-            has_exit = any(d.type == DestinationType.EXIT for d in collected)
-            has_enter = any(d.type == DestinationType.ENTER for d in collected)
+            has_exit = any(d.destination_type == DestinationType.EXIT for d in collected)
+            has_enter = any(d.destination_type == DestinationType.ENTER for d in collected)
             if has_exit and has_enter:
-                collected = [d for d in collected if d.type != DestinationType.ENTER]
+                collected = [d for d in collected if d.destination_type != DestinationType.ENTER]
 
             # Merge into ramp.destination with de-dup on (name,type)
-            existing = {(d.name, d.type) for d in ramp.destination}
+            existing = {(d.name, d.destination_type) for d in ramp.destination}
             for d in collected:
-                key = (d.name, d.type)
+                key = (d.name, d.destination_type)
                 if key not in existing:
                     ramp.destination.append(d)
                     existing.add(key)
@@ -280,14 +289,14 @@ def annotate_ramps_by_query_unknown(
     # Query for unknown end nodes
     response = load_unknown_end_nodes(unknown_node_ids, interchange_name, use_cache)
 
-    node_to_relation = wrap_ways_as_node_relation(response.list_ways(), road_type="unknown")
+    node_to_relation = wrap_ways_as_node_relation(response.list_ways(), road_type=RoadType.WAY)
     for ramp in ramps:
-        names = extract_ramp_name_by_end_node_relation(ramp, node_to_relation)
-        if not names:
+        relations = extract_ramp_name_by_end_node_relation(ramp, node_to_relation)
+        if not relations:
             continue
         # Unknown end node implies exiting freeway
-        for name in names:
-            dest = Destination(name=name, type=DestinationType.EXIT)
+        for rel in relations:
+            dest = Destination.from_relation(rel, DestinationType.EXIT)
             ramp.destination.append(dest)
         ramp.destination = list(set(ramp.destination))
     return ramps
@@ -313,40 +322,50 @@ def annotate_ramp(
 
     # 1) weigh-station way relation (top priority)
     if not all_destinations and weigh_way_to_relations:
-        weigh_names = extract_ramp_name_by_way_relation(ramp, weigh_way_to_relations)
+        weigh_relations = extract_ramp_name_by_way_relation(ramp, weigh_way_to_relations)
         # weigh station implies EXIT direction
-        all_destinations.extend(Destination(name=n, type=DestinationType.EXIT) for n in weigh_names)
+        all_destinations.extend(
+            Destination.from_relation(rel, DestinationType.EXIT) for rel in weigh_relations
+        )
 
     # 2) freeway end-node relation
     if not all_destinations and freeway_node_rel:
-        freeway_names = extract_ramp_name_by_end_node_relation(ramp, freeway_node_rel)
+        freeway_relations = extract_ramp_name_by_end_node_relation(ramp, freeway_node_rel)
         all_destinations.extend(
-            Destination(name=n, type=DestinationType.ENTER) for n in freeway_names
+            Destination.from_relation(rel, DestinationType.ENTER) for rel in freeway_relations
         )
 
     # 3) provincial end-node relation
     if not all_destinations and provincial_node_rel:
-        provincial_names = extract_ramp_name_by_end_node_relation(ramp, provincial_node_rel)
+        provincial_relations = extract_ramp_name_by_end_node_relation(ramp, provincial_node_rel)
         all_destinations.extend(
-            Destination(name=n, type=DestinationType.ENTER) for n in provincial_names
+            Destination.from_relation(rel, DestinationType.ENTER) for rel in provincial_relations
         )
 
     # 4) end-node adjacent route relation (EXIT)
     if not all_destinations and endnode_adjacent_relations:
-        adj_names = extract_ramp_name_by_end_node_relation(ramp, endnode_adjacent_relations)
-        all_destinations.extend(Destination(name=n, type=DestinationType.EXIT) for n in adj_names)
+        adj_relations = extract_ramp_name_by_end_node_relation(ramp, endnode_adjacent_relations)
+        all_destinations.extend(
+            Destination.from_relation(rel, DestinationType.EXIT) for rel in adj_relations
+        )
 
     # 5) generic node relation by start node (junction names) just above generic way
+    """
+    # currently disabled
     if not all_destinations and junction_node_rel:
-        start_node_names = extract_ramp_name_by_start_node_relation(ramp, junction_node_rel)
+        start_node_relations = extract_ramp_name_by_start_node_relation(ramp, junction_node_rel)
         all_destinations.extend(
-            Destination(name=n, type=DestinationType.OSM) for n in start_node_names
+            Destination.from_relation(rel, DestinationType.OSM) for rel in start_node_relations
         )
 
     # 6) generic way relation (lowest priority)
     if not all_destinations and way_to_relations:
-        way_names = extract_ramp_name_by_way_relation(ramp, way_to_relations)
-        all_destinations.extend(Destination(name=n, type=DestinationType.OSM) for n in way_names)
+        way_relations = extract_ramp_name_by_way_relation(ramp, way_to_relations)
+        all_destinations.extend(
+            Destination.from_relation(rel, DestinationType.OSM) for rel in way_relations
+        )
+    """
+
 
     # Assign de-duplicated
     ramp.destination = list(set(all_destinations))
@@ -484,12 +503,14 @@ def annotate_interchange_name(
     # Collect junction names (motorway_junction nodes)
     names: set[str] = set()
     for ramp in interchange.ramps:
-        names.update(extract_ramp_name_by_node_relation(ramp, junction_node_rel))
+        relations = extract_ramp_name_by_node_relation(ramp, junction_node_rel)
+        names.update(rel.name for rel in relations)
 
     # Also include weigh-station names
     weigh_names: set[str] = set()
     for ramp in interchange.ramps:
-        weigh_names.update(extract_ramp_name_by_way_relation(ramp, weigh_way_rel))
+        weigh_relations = extract_ramp_name_by_way_relation(ramp, weigh_way_rel)
+        weigh_names.update(rel.name for rel in weigh_relations)
     if weigh_names:
         weigh_names = set(normalize_weigh_station_name(name) for name in weigh_names if name)
 
@@ -538,7 +559,7 @@ def annotate_interchange_ramps(
     )
 
 
-def build_exit_relation(response: OverPassResponse, road_type: str) -> NodeRelationMap:
+def build_exit_relation(response: OverPassResponse, road_type: RoadType) -> NodeRelationMap:
     """Build node->relation mapping for exits/roads from a single Overpass response.
 
     Takes an OverPassResponse and returns a NodeRelationMap of node_id -> Relation(name, road_type)
@@ -592,13 +613,13 @@ def get_preferred_route_for_master(
 
 def build_master_order_index(
     response: OverPassResponse,
-) -> dict[int, tuple[str, int, str]]:
+) -> dict[int, tuple[str, int, Relation]]:
     """Build a global node index for freeway masters using both primary and secondary routes.
 
-    Returns dict[node_id, (ref, order, name)] where:
+    Returns dict[node_id, (ref, order, relation)] where:
     - ref: master tags.ref if present, else master tags.name, else f"master:{id}"
     - order: index along the selected member route's ordered nodes
-    - name: master tags.name if present, else ref string
+    - relation: Relation object with master information
 
     Processing order:
     1. Primary routes are processed first and take precedence
@@ -616,7 +637,7 @@ def build_master_order_index(
         if (rel.tags or {}).get("type") == "route":
             route_rel_ways[rel.id] = ways
 
-    node_index: dict[int, tuple[str, int, str]] = {}
+    node_index: dict[int, tuple[str, int, Relation]] = {}
 
     masters = list_master_relations(response)
     # Process masters in ref order for stability
@@ -634,6 +655,14 @@ def build_master_order_index(
 
         mref, mname = display_for_master(master)
 
+        # Create Relation object for this master
+        master_relation = Relation(
+            id=master.id,
+            name=mname,
+            road_type=RoadType.FREEWAY,
+            relation_type=RelationType.RELATION,
+        )
+
         ordered = build_ordered_node_ids_for_relation(ways)
         if not ordered:
             raise ValueError(f"No ordered nodes found for primary route {primary.id}")
@@ -646,23 +675,23 @@ def build_master_order_index(
 
         # Merge into global index only if not already present (primary takes precedence)
         for i, order in ordered_secondary.items():
-            node_index[i] = mref, int(order) + last_order + 1, mname
+            node_index[i] = mref, int(order) + last_order + 1, master_relation
         for i, order in ordered.items():
-            node_index[i] = (mref, int(order), mname)
+            node_index[i] = (mref, int(order), master_relation)
 
     return node_index
 
 
 def reorder_and_annotate_interchanges_by_node_index(
     interchanges: list[Interchange],
-    node_index: dict[int, tuple[str, int, str]],
+    node_index: dict[int, tuple[str, int, Relation]],
 ) -> list[Interchange]:
     """Reorder and annotate interchanges based on node_index, sorting by master reference and node order.
 
     This function processes a list of Interchange objects by:
-    - Annotating each interchange's `refs` list with unique master names from nodes in the interchange.
+    - Annotating each interchange's `refs` list with unique master relations from nodes in the interchange.
     - Determining the minimum order for each interchange based on the node_index.
-    - Sorting the interchanges by their minimum order (master ref, order, master name).
+    - Sorting the interchanges by their minimum order (master ref, order, master relation).
     - Renumbering the sorted interchanges using renumber_interchanges.
     """
     if not interchanges or not node_index:
@@ -672,17 +701,20 @@ def reorder_and_annotate_interchanges_by_node_index(
     interchanges = renumber_interchanges(interchanges)
 
     # Annotate refs and track min order for each interchange, keyed by interchange id
-    ic_min_index: dict[int, tuple[str, int, str]] = {}
+    ic_min_index: dict[int, tuple[str, int, Relation]] = {}
     for ic in interchanges:
+        # Track existing relation names to avoid duplicates
+        existing_ref_names = {rel.name for rel in ic.refs}
         for n in ic.list_nodes():
             if n.id not in node_index:
                 continue
-            mref, morder, mname = node_index[n.id]
-            if mname not in ic.refs:
-                ic.refs.append(mname)
+            mref, morder, master_relation = node_index[n.id]
+            if master_relation.name not in existing_ref_names:
+                ic.refs.append(master_relation)
+                existing_ref_names.add(master_relation.name)
             # Update min order for sorting
             current = ic_min_index.get(ic.id)
-            index = (mref, morder, mname)
+            index = (mref, morder, master_relation)
             if current is None or current > index:
                 ic_min_index[ic.id] = index
 
@@ -733,7 +765,7 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     print("Processing paths and ramps...")
     # Create dictionaries / mappings for efficient lookup
     node_dict = {node.id: node for node in nodes}
-    way_to_relations = wrap_ways_as_relation(ways, road_type="way")
+    way_to_relations = wrap_ways_as_relation(ways, road_type=RoadType.WAY)
     junction_node_rel = wrap_junction_name_relation(node_dict, IGNORED_NODE_IDS)
     paths = process_paths_from_ways(ways, excluded_ids=None, duplicate_two_way=True)
     print(f"Processed {len(paths)} paths")
@@ -793,11 +825,11 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
     print(f"After merge: {len(interchanges)} interchanges")
 
     provincial_resp = load_provincial_routes(use_cache)
-    provincial_node_rel = build_exit_relation(provincial_resp, "provincial")
+    provincial_node_rel = build_exit_relation(provincial_resp, RoadType.PROVINCIAL)
     print(f"Prepared {len(provincial_node_rel)} provincial node relations")
 
     # freeway_resp already loaded above
-    freeway_node_rel = build_exit_relation(freeway_resp, "freeway")
+    freeway_node_rel = build_exit_relation(freeway_resp, RoadType.FREEWAY)
     print(
         f"Prepared {len(freeway_node_rel)} freeway and {len(provincial_node_rel)} provincial node relations"
     )

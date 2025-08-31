@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Interchange } from '$lib/types.js';
+	import { ChevronDown, ChevronUp } from 'lucide-svelte';
 
 	let {
 		interchanges = [],
@@ -18,7 +19,9 @@
 
 	// Get unique refs from all interchanges
 	let availableRefs = $derived(
-		Array.from(new Set(interchanges.flatMap((interchange) => interchange.refs))).sort()
+		Array.from(
+			new Set(interchanges.flatMap((interchange) => interchange.refs.map((ref) => ref.name)))
+		).sort()
 	);
 
 	// Filter interchanges based on search criteria
@@ -50,7 +53,8 @@
 
 			// Refs filter
 			const matchesRefFilter =
-				selectedRefFilter === 'all' || interchange.refs.includes(selectedRefFilter);
+				selectedRefFilter === 'all' ||
+				interchange.refs.some((ref) => ref.name === selectedRefFilter);
 
 			return matchesSearch && matchesWeighStation && matchesServiceArea && matchesRefFilter;
 		});
@@ -68,10 +72,15 @@
 		</div>
 		<button
 			onclick={() => (showFilters = !showFilters)}
-			class="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+			class="text-sm text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1"
 			title="Toggle filter options"
 		>
-			{showFilters ? '▲' : '▼'} Filters
+			{#if showFilters}
+				<ChevronUp size={16} />
+			{:else}
+				<ChevronDown size={16} />
+			{/if}
+			Filters
 		</button>
 	</div>
 

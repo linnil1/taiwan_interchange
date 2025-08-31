@@ -23,12 +23,35 @@ export interface Path {
 
 export const enum DestinationType {
 	EXIT = 'EXIT',
-	ENTER = 'ENTER'
+	ENTER = 'ENTER',
+	OSM = 'OSM'
+}
+
+export const enum RelationType {
+	RELATION = 'RELATION',
+	WAY = 'WAY',
+	NODE = 'NODE'
+}
+
+export const enum RoadType {
+	FREEWAY = 'freeway',
+	PROVINCIAL = 'provincial',
+	NORMAL = 'normal',
+	WEIGH = 'weigh',
+	WAY = 'way',
+	JUNCTION = 'junction',
+	DESTINATION = 'destination'
 }
 
 export interface Destination {
+	/** OSM relation ID */
+	id: number;
 	name: string;
-	type: DestinationType;
+	destination_type: DestinationType;
+	/** Type of road relation */
+	road_type: RoadType;
+	/** Type of OSM relation */
+	relation_type: RelationType;
 }
 
 export interface Ramp {
@@ -55,6 +78,17 @@ export interface Bounds {
 	max_lng: number;
 }
 
+export interface Relation {
+	/** OSM relation ID */
+	id: number;
+	/** Name of the relation */
+	name: string;
+	/** Type of road relation */
+	road_type: RoadType;
+	/** Type of OSM relation */
+	relation_type: RelationType;
+}
+
 export interface Interchange {
 	/** Unique identifier for the interchange */
 	id: number;
@@ -64,8 +98,8 @@ export interface Interchange {
 	bounds: Bounds;
 	/** Array of ramps in this interchange */
 	ramps: Ramp[];
-	/** Freeway route_master names that this interchange belongs to */
-	refs: string[];
+	/** Freeway route_master relations that this interchange belongs to */
+	refs: Relation[];
 }
 
 // Utility types for API responses
@@ -96,7 +130,14 @@ export function isRamp(obj: any): obj is Ramp {
 		typeof obj === 'object' &&
 		typeof obj.id === 'number' &&
 		Array.isArray(obj.destination) &&
-		obj.destination.every((d: any) => typeof d?.name === 'string' && typeof d?.type === 'string') &&
+		obj.destination.every(
+			(d: any) =>
+				typeof d?.id === 'number' &&
+				typeof d?.name === 'string' &&
+				typeof d?.destination_type === 'string' &&
+				typeof d?.road_type === 'string' &&
+				typeof d?.relation_type === 'string'
+		) &&
 		Array.isArray(obj.from_ramps) &&
 		Array.isArray(obj.to_ramps) &&
 		Array.isArray(obj.paths) &&
@@ -114,6 +155,16 @@ export function isBounds(obj: any): obj is Bounds {
 	);
 }
 
+export function isRelation(obj: any): obj is Relation {
+	return (
+		typeof obj === 'object' &&
+		typeof obj.id === 'number' &&
+		typeof obj.name === 'string' &&
+		typeof obj.road_type === 'string' &&
+		typeof obj.relation_type === 'string'
+	);
+}
+
 export function isInterchange(obj: any): obj is Interchange {
 	return (
 		typeof obj === 'object' &&
@@ -123,6 +174,6 @@ export function isInterchange(obj: any): obj is Interchange {
 		Array.isArray(obj.ramps) &&
 		obj.ramps.every(isRamp) &&
 		Array.isArray(obj.refs) &&
-		obj.refs.every((s: any) => typeof s === 'string')
+		obj.refs.every(isRelation)
 	);
 }

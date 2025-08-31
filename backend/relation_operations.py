@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import NewType
 
-from models import Ramp, Relation
+from models import Ramp, Relation, RelationType, RoadType
 from osm import OverPassNode, OverPassRelation, OverPassResponse, OverPassWay
 from osm_operations import extract_to_destination
 from utils import calculate_distance
@@ -24,77 +24,83 @@ WayRelationMap = NewType("WayRelationMap", dict[int, Relation])
 
 def extract_ramp_name_by_end_node_relation(
     ramp: Ramp, node_to_relations: NodeRelationMap
-) -> list[str]:
-    """Extract ramp name(s) using a node->relation mapping (by end node)."""
-    all_destinations: list[str] = []
+) -> list[Relation]:
+    """Extract ramp relation(s) using a node->relation mapping (by end node)."""
+    relations: list[Relation] = []
 
     # Use the end node to determine destination
     _, end_node = ramp.get_endpoint_nodes()
     relation = node_to_relations.get(end_node.id)
     if relation:
-        all_destinations.append(relation.name)
+        relations.append(relation)
 
-    return all_destinations
+    return relations
 
 
 def extract_ramp_name_by_start_node_relation(
     ramp: Ramp, node_to_relations: NodeRelationMap
-) -> list[str]:
-    """Extract ramp name(s) using a node->relation mapping (by start node).
+) -> list[Relation]:
+    """Extract ramp relation(s) using a node->relation mapping (by start node).
 
     This is useful for generic node relations like junction names when
     end-node mapping or other sources are unavailable.
     """
-    names: list[str] = []
+    relations: list[Relation] = []
     start_node, _ = ramp.get_endpoint_nodes()
     relation = node_to_relations.get(start_node.id)
     if relation:
-        names.append(relation.name)
-    return names
+        relations.append(relation)
+    return relations
 
 
-def extract_ramp_name_by_node_relation(ramp: Ramp, node_to_relations: NodeRelationMap) -> list[str]:
-    """Extract ramp name(s) by scanning all nodes in the ramp.
+def extract_ramp_name_by_node_relation(
+    ramp: Ramp, node_to_relations: NodeRelationMap
+) -> list[Relation]:
+    """Extract ramp relation(s) by scanning all nodes in the ramp.
 
     Useful when end-node mapping is missing but intermediate nodes carry relation context.
     """
-    names: list[str] = []
+    relations: list[Relation] = []
     for node in ramp.list_nodes():
         rel = node_to_relations.get(node.id)
         if rel:
-            names.append(rel.name)
-    return list(set(names))
+            relations.append(rel)
+    return list(set(relations))
 
 
-def extract_ramp_name_by_way_relation(ramp: Ramp, way_to_relations: WayRelationMap) -> list[str]:
-    """Extract ramp name(s) using a way->relation mapping (by path way id)."""
-    all_destinations: list[str] = []
+def extract_ramp_name_by_way_relation(
+    ramp: Ramp, way_to_relations: WayRelationMap
+) -> list[Relation]:
+    """Extract ramp relation(s) using a way->relation mapping (by path way id)."""
+    relations: list[Relation] = []
     for path in ramp.paths:
         rel = way_to_relations.get(path.id)
         if rel:
-            all_destinations.append(rel.name)
+            relations.append(rel)
     # de-duplicate while preserving minimal overhead
-    return list(set(all_destinations))
+    return list(set(relations))
 
 
 # ---- Builders: convert OSM structures to app Relation maps ----
 
 
-def wrap_ways_as_node_relation(ways: list[OverPassWay], road_type: str) -> NodeRelationMap:
+def wrap_ways_as_node_relation(ways: list[OverPassWay], road_type: RoadType) -> NodeRelationMap:
     """Process ways and return a node->relation mapping for those with names."""
     node_to_relation: dict[int, Relation] = {}
 
     for way in ways:
         if not way.tags.get("name"):
             continue
-        relation = Relation(name=way.tags["name"], road_type=road_type)
+        relation = Relation(
+            id=way.id, name=way.tags["name"], road_type=road_type, relation_type=RelationType.WAY
+        )
         for node_id in way.nodes:
             if node_id not in node_to_relation:
                 node_to_relation[node_id] = relation
     return NodeRelationMap(node_to_relation)
 
 
-def wrap_ways_as_relation(ways: list[OverPassWay], road_type: str) -> WayRelationMap:
+def wrap_ways_as_relation(ways: list[OverPassWay], road_type: RoadType) -> WayRelationMap:
     """Wrap ways that have a name into a way_id -> Relation mapping."""
     way_to_relation: dict[int, Relation] = {}
     for way in ways:
@@ -102,7 +108,9 @@ def wrap_ways_as_relation(ways: list[OverPassWay], road_type: str) -> WayRelatio
         if not name:
             continue
         if way.id not in way_to_relation:
-            way_to_relation[way.id] = Relation(name=name, road_type=road_type)
+            way_to_relation[way.id] = Relation(
+                id=way.id, name=name, road_type=road_type, relation_type=RelationType.WAY
+            )
     return WayRelationMap(way_to_relation)
 
 
@@ -115,13 +123,15 @@ def wrap_way_destination_to_relation(ways: list[OverPassWay]) -> WayRelationMap:
         if not name:
             continue
         if way.id not in way_to_relation:
-            way_to_relation[way.id] = Relation(name=name, road_type="destination")
+            way_to_relation[way.id] = Relation(
+                id=way.id, name=name, road_type=RoadType.DESTINATION, relation_type=RelationType.WAY
+            )
     return WayRelationMap(way_to_relation)
 
 
 def wrap_relation_to_node_relation(
     rel_ways_nodes: Sequence[tuple[OverPassRelation, list[OverPassWay], list[OverPassNode]]],
-    road_type: str,
+    road_type: RoadType,
 ) -> NodeRelationMap:
     """Convert relation -> (ways,nodes) tuples into a node_id -> Relation mapping.
 
@@ -132,7 +142,12 @@ def wrap_relation_to_node_relation(
     for relation, ways, nodes in rel_ways_nodes:
         if not relation.tags or "name" not in relation.tags:
             continue
-        relation_obj = Relation(name=relation.tags["name"], road_type=road_type)
+        relation_obj = Relation(
+            id=relation.id,
+            name=relation.tags["name"],
+            road_type=road_type,
+            relation_type=RelationType.RELATION,
+        )
         for way in ways:
             for node_id in way.nodes:
                 if node_id not in node_to_relations:
@@ -174,7 +189,9 @@ def wrap_adj_road_relation(response: OverPassResponse) -> NodeRelationMap:
         name = rel_way_to_name.get(way.id) or ((way.tags or {}).get("name") or "")
         if not name:
             continue
-        rel_obj = Relation(name=name, road_type="normal_road")
+        rel_obj = Relation(
+            id=way.id, name=name, road_type=RoadType.NORMAL, relation_type=RelationType.WAY
+        )
         for nid in way.nodes:
             if nid not in node_to_relation:
                 node_to_relation[nid] = rel_obj
@@ -203,7 +220,9 @@ def build_weigh_way_relations(
         sname = ws.tags.get("name")
         if not sname:
             continue
-        rel = Relation(name=sname, road_type="weigh")
+        rel = Relation(
+            id=ws.id, name=sname, road_type=RoadType.WEIGH, relation_type=RelationType.WAY
+        )
         if not ws.geometry:
             continue
         slat, slng = ws.geometry[0].lat, ws.geometry[0].lng
@@ -244,5 +263,10 @@ def wrap_junction_name_relation(
             and "name" in osm_node.tags
             and (osm_node.id not in ignored_ids)
         ):
-            node_to_relation[node_id] = Relation(name=osm_node.tags["name"], road_type="junction")
+            node_to_relation[node_id] = Relation(
+                id=osm_node.id,
+                name=osm_node.tags["name"],
+                road_type=RoadType.JUNCTION,
+                relation_type=RelationType.NODE,
+            )
     return NodeRelationMap(node_to_relation)

@@ -59,7 +59,7 @@
 								<span
 									class="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 border border-gray-200"
 								>
-									{ref}
+									{ref.name}
 								</span>
 							{/each}
 						</div>

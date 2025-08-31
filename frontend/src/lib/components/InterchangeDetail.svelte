@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { X, ZoomIn } from 'lucide-svelte';
 	import type { Interchange } from '$lib/types.js';
 
 	let {
@@ -49,28 +50,69 @@
 		return { fromRamps, toRamps };
 	}
 
-	// Helper function to format ramp display name
+	// Helper function to format ramp display name - just show #number
 	function getRampDisplayName(ramp: any) {
+		return `#${ramp.id}`;
+	}
+
+	// Helper function to format ramp display name for navigation - show destinations + #number
+	function getRampNavigationDisplayName(ramp: any) {
 		if (ramp.destination && ramp.destination.length > 0) {
 			const destinationNames = ramp.destination.map((d: any) => d.name).join(', ');
 			return `${destinationNames} #${ramp.id}`;
 		}
-		return `Ramp ${ramp.id}`;
+		return `#${ramp.id}`;
+	}
+
+	// Helper function to get OSM link based on relation type
+	function getOSMLink(id: number, relationType: string) {
+		switch (relationType) {
+			case 'RELATION':
+				return `https://www.openstreetmap.org/relation/${id}`;
+			case 'WAY':
+				return `https://www.openstreetmap.org/way/${id}`;
+			case 'NODE':
+				return `https://www.openstreetmap.org/node/${id}`;
+			default:
+				return `https://www.openstreetmap.org/relation/${id}`;
+		}
 	}
 </script>
 
 <div class="w-96 bg-white border-r border-gray-300 overflow-y-auto">
 	<div class="sticky top-0 bg-white border-b border-gray-300 p-4">
 		<div class="flex justify-between items-start">
-			<div>
+			<div class="min-w-0 flex-1">
 				<h2 class="text-lg font-bold text-gray-800">{interchange.name}</h2>
-				<p class="text-sm text-gray-600">{interchange.ramps.length} ramps</p>
+				<div class="text-sm text-gray-600">{interchange.ramps.length} ramps</div>
+				<!-- Show refs if available -->
+				{#if interchange.refs && interchange.refs.length > 0}
+					<div class="mt-2">
+						<div class="text-xs text-gray-500 mb-1">Connected to:</div>
+						<div class="flex flex-wrap gap-1">
+							{#each interchange.refs as ref}
+								<span
+									class="inline-flex items-center rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 border border-blue-200"
+								>
+									<a
+										href="https://www.openstreetmap.org/relation/{ref.id}"
+										target="_blank"
+										rel="noopener noreferrer"
+										class="hover:underline"
+									>
+										{ref.name}
+									</a>
+								</span>
+							{/each}
+						</div>
+					</div>
+				{/if}
 			</div>
 			<button
-				class="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition-colors"
+				class="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition-colors flex-shrink-0 flex items-center gap-1"
 				onclick={onClose}
 			>
-				✕
+				<X size={16} />
 			</button>
 		</div>
 	</div>
@@ -113,9 +155,6 @@
 								: ''} flex items-center"
 						>
 							{getRampDisplayName(ramp)}
-							<span class="ml-2 text-xs text-gray-400">
-								{selectedRampIndex === i ? '👁️' : ''}
-							</span>
 							{#if selectedRampIndex === i}
 								<button
 									type="button"
@@ -126,7 +165,7 @@
 									}}
 									title="Zoom to ramp"
 								>
-									🔍
+									<ZoomIn size={16} />
 								</button>
 							{/if}
 						</span>
@@ -134,6 +173,33 @@
 							>{ramp.paths.length} path{ramp.paths.length === 1 ? '' : 's'}</span
 						>
 					</div>
+					<!-- Destination information directly below ramp title -->
+					{#if ramp.destination && ramp.destination.length > 0}
+						<div class="text-sm text-gray-600 mb-2">
+							{#each ramp.destination as d, di}
+								<span class="inline-flex items-center mr-2">
+									<span
+										class="px-1.5 py-0.5 rounded text-white text-[10px] mr-1 {d.destination_type ===
+										'ENTER'
+											? 'bg-blue-500'
+											: 'bg-green-600'}">{d.destination_type}</span
+									>
+									{d.name}
+									<a
+										href={getOSMLink(d.id, d.relation_type)}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="text-blue-600 hover:text-blue-800 underline ml-1 text-xs"
+										onclick={(e) => e.stopPropagation()}
+									>
+										{d.id}
+									</a>{di < ramp.destination.length - 1 ? ',' : ''}
+								</span>
+							{/each}
+						</div>
+					{:else}
+						<div class="text-sm text-gray-600 mb-2">Unknown</div>
+					{/if}
 					<!-- Ramp Navigation -->
 					{#if getRampConnections(ramp).fromRamps.length > 0 || getRampConnections(ramp).toRamps.length > 0}
 						{@const connections = getRampConnections(ramp)}
@@ -147,7 +213,7 @@
 										navigateToRamp(fromRamp.id);
 									}}
 								>
-									← {getRampDisplayName(fromRamp)}
+									← {getRampNavigationDisplayName(fromRamp)}
 								</button>
 							{/each}
 							{#each connections.toRamps as toRamp}
@@ -159,32 +225,11 @@
 										navigateToRamp(toRamp.id);
 									}}
 								>
-									{getRampDisplayName(toRamp)} →
+									{getRampNavigationDisplayName(toRamp)} →
 								</button>
 							{/each}
 						</div>
 					{/if}
-
-					<!--
-					Debug use
-					<div class="text-sm text-gray-600 mb-2">
-						<strong>To:</strong>
-						{#if ramp.destination.length > 0}
-							{#each ramp.destination as d, di}
-								<span class="inline-flex items-center mr-2">
-									<span
-										class="px-1.5 py-0.5 rounded text-white text-[10px] mr-1 {d.type === 'ENTER'
-											? 'bg-blue-500'
-											: 'bg-green-600'}">{d.type}</span
-									>
-									{d.name}{di < ramp.destination.length - 1 ? ',' : ''}
-								</span>
-							{/each}
-						{:else}
-							Unknown
-						{/if}
-					</div>
-					-->
 
 					<!-- Paths within ramp -->
 					<div class="ml-2">
