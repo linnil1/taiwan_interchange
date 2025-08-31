@@ -79,7 +79,7 @@
 	}
 </script>
 
-<div class="w-96 bg-white border-r border-gray-300 overflow-y-auto">
+<div class="w-86 bg-white border-r border-gray-300 overflow-y-auto">
 	<div class="sticky top-0 bg-white border-b border-gray-300 p-4">
 		<div class="flex justify-between items-start">
 			<div class="min-w-0 flex-1">
@@ -149,90 +149,98 @@
 						: 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}"
 				>
 					<div class="flex justify-between items-start mb-2">
-						<span
-							class="font-medium text-sm {selectedRampIndex === i
-								? 'text-blue-700'
-								: ''} flex items-center"
-						>
-							{getRampDisplayName(ramp)}
-							{#if selectedRampIndex === i}
-								<button
-									type="button"
-									class="ml-2 text-blue-500 hover:text-blue-700 transition-colors"
-									onclick={(e) => {
-										e.stopPropagation();
-										fitRampIndex = i;
-									}}
-									title="Zoom to ramp"
-								>
-									<ZoomIn size={16} />
-								</button>
-							{/if}
-						</span>
-						<span class="text-xs text-gray-500"
+						<div class="flex-1 text-center">
+							<div
+								class="font-medium text-sm {selectedRampIndex === i
+									? 'text-blue-700'
+									: ''} flex items-center justify-center"
+							>
+								{getRampDisplayName(ramp)}
+								{#if selectedRampIndex === i}
+									<button
+										type="button"
+										class="ml-2 text-blue-500 hover:text-blue-700 transition-colors"
+										onclick={(e) => {
+											e.stopPropagation();
+											fitRampIndex = i;
+										}}
+										title="Zoom to ramp"
+									>
+										<ZoomIn size={16} />
+									</button>
+								{/if}
+							</div>
+						</div>
+						<span class="text-xs text-gray-500 flex-shrink-0"
 							>{ramp.paths.length} path{ramp.paths.length === 1 ? '' : 's'}</span
 						>
 					</div>
-					<!-- Destination information directly below ramp title -->
+					<!-- Destination information directly below ramp title - each destination on its own row, centered -->
 					{#if ramp.destination && ramp.destination.length > 0}
-						<div class="text-sm text-gray-600 mb-2">
+						<div class="text-sm text-gray-600 mb-2 text-center">
 							{#each ramp.destination as d, di}
-								<span class="inline-flex items-center mr-2">
+								<div class="flex items-center justify-center mb-1">
 									<span
-										class="px-1.5 py-0.5 rounded text-white text-[10px] mr-1 {d.destination_type ===
+										class="px-1.5 py-0.5 rounded border text-[10px] mr-2 {d.destination_type ===
 										'ENTER'
-											? 'bg-blue-500'
-											: 'bg-green-600'}">{d.destination_type}</span
+											? 'border-gray-400 text-gray-700 bg-gray-100'
+											: 'border-gray-400 text-gray-700 bg-white'}">{d.destination_type}</span
 									>
-									{d.name}
+									<span class="mr-2 font-bold">{d.name}</span>
 									<a
 										href={getOSMLink(d.id, d.relation_type)}
 										target="_blank"
 										rel="noopener noreferrer"
-										class="text-blue-600 hover:text-blue-800 underline ml-1 text-xs"
+										class="text-blue-600 hover:text-blue-800 underline text-xs"
 										onclick={(e) => e.stopPropagation()}
 									>
 										{d.id}
-									</a>{di < ramp.destination.length - 1 ? ',' : ''}
-								</span>
+									</a>
+								</div>
 							{/each}
 						</div>
 					{:else}
-						<div class="text-sm text-gray-600 mb-2">Unknown</div>
+						<div class="text-sm text-gray-600 mb-2 text-center font-bold">Unknown</div>
 					{/if}
 					<!-- Ramp Navigation -->
 					{#if getRampConnections(ramp).fromRamps.length > 0 || getRampConnections(ramp).toRamps.length > 0}
 						{@const connections = getRampConnections(ramp)}
-						<div class="mb-2 text-xs flex flex-wrap gap-1 mt-1 items-center">
-							{#each connections.fromRamps as fromRamp}
-								<button
-									type="button"
-									class="px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
-									onclick={(e) => {
-										e.stopPropagation();
-										navigateToRamp(fromRamp.id);
-									}}
-								>
-									← {getRampNavigationDisplayName(fromRamp)}
-								</button>
-							{/each}
-							{#each connections.toRamps as toRamp}
-								<button
-									type="button"
-									class="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-									onclick={(e) => {
-										e.stopPropagation();
-										navigateToRamp(toRamp.id);
-									}}
-								>
-									{getRampNavigationDisplayName(toRamp)} →
-								</button>
-							{/each}
+						<div class="mb-2 text-xs grid grid-cols-2 gap-2 mt-3 mx-2">
+							<!-- Previous ramps (left column) -->
+							<div class="flex flex-col gap-1">
+								{#each connections.fromRamps as fromRamp}
+									<button
+										type="button"
+										class="w-full px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors text-center leading-tight flex items-center justify-center"
+										onclick={(e) => {
+											e.stopPropagation();
+											navigateToRamp(fromRamp.id);
+										}}
+									>
+										← {getRampNavigationDisplayName(fromRamp)}
+									</button>
+								{/each}
+							</div>
+							<!-- Next ramps (right column) -->
+							<div class="flex flex-col gap-1">
+								{#each connections.toRamps as toRamp}
+									<button
+										type="button"
+										class="w-full px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-center leading-tight flex items-center justify-center"
+										onclick={(e) => {
+											e.stopPropagation();
+											navigateToRamp(toRamp.id);
+										}}
+									>
+										{getRampNavigationDisplayName(toRamp)} →
+									</button>
+								{/each}
+							</div>
 						</div>
 					{/if}
 
 					<!-- Paths within ramp -->
-					<div class="ml-2">
+					<div class="ml-2 mt-6">
 						{#each ramp.paths as path, j}
 							<div class="mb-2 p-2 bg-gray-50 rounded text-xs">
 								<div class="flex items-center justify-between mb-1">

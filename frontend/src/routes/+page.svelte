@@ -38,7 +38,7 @@
 
 <div class="flex h-screen font-sans">
 	<!-- Left Sidebar - Search and Interchange List components -->
-	<div class="w-80 flex flex-col bg-white border-r border-gray-300">
+	<div class="w-72 flex flex-col bg-white border-r border-gray-300">
 		<SearchComponent
 			interchanges={$interchangesStore || []}
 			bind:searchTerm
