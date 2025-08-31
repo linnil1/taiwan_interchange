@@ -48,7 +48,8 @@ def contract_paths_to_ramps(
 ) -> list[Ramp]:
     """
     Contract sequential paths into ramps by merging along nodes that have
-    exactly one incoming and one outgoing edge.
+    exactly one incoming and one outgoing edge (one-way case) or
+    two incoming and two outgoing edges where path IDs match (non-one-way case).
 
     Returns a list of Ramp objects with contiguous Path sequences; graph
     connectivity (from_ramps/to_ramps) is not set here.
@@ -64,12 +65,52 @@ def contract_paths_to_ramps(
         outgoing_paths[s.id].append(p)
         incoming_paths[e.id].append(p)
 
-    begin_node_ids = [
-        node_id for node_id, _ in outgoing_paths.items() if node_id not in incoming_paths
+    begin_node_ids1 = [
+        node_id for node_id, _ in outgoing_paths.items() if incoming_paths.get(node_id) is None
     ]
+    # consider non-oneway or loop case
+    begin_node_ids2 = [
+        node_id
+        for node_id, paths in outgoing_paths.items()
+        if len(incoming_paths.get(node_id, [])) == 1 and len(paths) == 1
+    ]
+    begin_node_ids = begin_node_ids1 + begin_node_ids2
 
     # Track included paths by subpath id to avoid duplicates / cycles
     used: set[str] = set()
+
+    def can_extend_oneway(node_id: int) -> bool:
+        """Check if node has exactly one incoming and one outgoing path (one-way case)."""
+        out_paths = outgoing_paths.get(node_id, [])
+        in_paths = incoming_paths.get(node_id, [])
+        return len(out_paths) == 1 and len(in_paths) == 1
+
+    def can_extend_non_oneway(node_id: int, current_path: Path) -> bool:
+        """Check if node allows non-one-way extension (two in, two out with matching path IDs)."""
+        out_paths = outgoing_paths.get(node_id, [])
+        in_paths = incoming_paths.get(node_id, [])
+
+        if len(out_paths) != 2 or len(in_paths) != 2:
+            return False
+
+        # Get path IDs for incoming and outgoing paths
+        in_path_ids = {p.id for p in in_paths}
+        out_path_ids = {p.id for p in out_paths}
+
+        # Check if the same path IDs appear in both inbound and outbound
+        return in_path_ids == out_path_ids
+
+    def get_next_path_oneway(node_id: int) -> Path | None:
+        """Get the next path for one-way extension."""
+        out_paths = outgoing_paths.get(node_id, [])
+        return out_paths[0] if out_paths else None
+
+    def get_next_path_non_oneway(node_id: int, current_path: Path) -> Path | None:
+        """Get the next path for non-one-way extension (the non-current path)."""
+        out_paths = outgoing_paths.get(node_id, [])
+        current_path_id = current_path.id
+        next_candidates = [p for p in out_paths if p.id != current_path_id]
+        return next_candidates[0] if len(next_candidates) == 1 else None
 
     def extend_chain(start: Path) -> list[Path]:
         chain = [start]
@@ -77,21 +118,34 @@ def contract_paths_to_ramps(
         cur = start
         last_id = cur.get_endpoint_nodes()[1].id
 
-        # Keep extending while the junction has exactly one in and one out
-        while (
-            len(outgoing_paths.get(last_id, [])) == 1 and len(incoming_paths.get(last_id, [])) == 1
-        ):
-            nxt = outgoing_paths[last_id][0]
+        # Keep extending while junction allows extension
+        while True:
+            nxt = None
+
+            # Try one-way case first
+            if can_extend_oneway(last_id):
+                nxt = get_next_path_oneway(last_id)
+            # Try non-one-way case
+            elif can_extend_non_oneway(last_id, cur):
+                nxt = get_next_path_non_oneway(last_id, cur)
+
+            # If no valid next path found, stop extending
+            if nxt is None:
+                break
+
+            # Check if path is already used or can't connect
             sub_id = nxt.get_subpath_id()
             if sub_id in used:
-                # Prevent accidental loops
                 break
             if not can_paths_connect(cur, nxt):
                 break
+
+            # Add to chain and continue
             chain.append(nxt)
             used.add(sub_id)
             cur = nxt
             last_id = cur.get_endpoint_nodes()[1].id
+
         return chain
 
     ramps: list[Ramp] = []

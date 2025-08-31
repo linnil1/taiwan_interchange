@@ -60,7 +60,6 @@ from relation_operations import (
     build_weigh_way_relations,
     extract_ramp_name_by_end_node_relation,
     extract_ramp_name_by_node_relation,
-    extract_ramp_name_by_start_node_relation,
     extract_ramp_name_by_way_relation,
     wrap_adj_road_relation,
     wrap_junction_name_relation,
@@ -365,7 +364,6 @@ def annotate_ramp(
             Destination.from_relation(rel, DestinationType.OSM) for rel in way_relations
         )
     """
-
 
     # Assign de-duplicated
     ramp.destination = list(set(all_destinations))
