@@ -3,10 +3,11 @@
 	import InterchangeList from '$lib/components/InterchangeList.svelte';
 	import InterchangeDetail from '$lib/components/InterchangeDetail.svelte';
 	import SearchComponent from '$lib/components/SearchComponent.svelte';
+	import ProjectFooter from '$lib/components/ProjectFooter.svelte';
 	import { interchangesStore, fetchInterchanges } from '$lib/stores/interchanges.js';
 	import type { Interchange } from '$lib/types.js';
-	import { Info } from 'lucide-svelte';
 	import { onMount } from 'svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	let selectedInterchange: Interchange | null = $state(null);
 	let selectedRampIndex: number | null = $state(null);
@@ -31,7 +32,7 @@
 </script>
 
 <svelte:head>
-	<title>Taiwan Interchange Explorer</title>
+	<title>{m.project_title()}</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </svelte:head>
 
@@ -50,22 +51,8 @@
 				onSelectInterchange={selectInterchange}
 			/>
 		</div>
-		<!-- Project Info Footer -->
-		<div class="border-t border-gray-300 px-3 py-2 bg-gray-50">
-			<div class="flex items-center justify-between text-xs">
-				<div>
-					<span class="font-semibold text-gray-800">Taiwan Interchange Explorer</span>
-					<span class="text-gray-600 ml-1">by <strong>linnil1</strong></span>
-				</div>
-				<a
-					href="/about"
-					class="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center gap-1"
-				>
-					<Info size={14} />
-					About
-				</a>
-			</div>
-		</div>
+		<!-- Project Footer -->
+		<ProjectFooter />
 	</div>
 
 	<!-- Detail Sidebar (appears when item selected) -->

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { X, ZoomIn } from 'lucide-svelte';
 	import type { Interchange } from '$lib/types.js';
+	import * as m from '$lib/paraglide/messages';
 
 	let {
 		interchange,
@@ -84,11 +85,15 @@
 		<div class="flex justify-between items-start">
 			<div class="min-w-0 flex-1">
 				<h2 class="text-lg font-bold text-gray-800">{interchange.name}</h2>
-				<div class="text-sm text-gray-600">{interchange.ramps.length} ramps</div>
+				<div class="text-sm text-gray-600">
+					{interchange.ramps.length === 1
+						? m.ramp({ count: interchange.ramps.length })
+						: m.ramps({ count: interchange.ramps.length })}
+				</div>
 				<!-- Show refs if available -->
 				{#if interchange.refs && interchange.refs.length > 0}
 					<div class="mt-2">
-						<div class="text-xs text-gray-500 mb-1">Connected to:</div>
+						<div class="text-xs text-gray-500 mb-1">{m.connected_to()}</div>
 						<div class="flex flex-wrap gap-1">
 							{#each interchange.refs as ref}
 								<span
@@ -164,16 +169,18 @@
 											e.stopPropagation();
 											fitRampIndex = i;
 										}}
-										title="Zoom to ramp"
+										title={m.zoom_to_ramp()}
 									>
 										<ZoomIn size={16} />
 									</button>
 								{/if}
 							</div>
 						</div>
-						<span class="text-xs text-gray-500 flex-shrink-0"
-							>{ramp.paths.length} path{ramp.paths.length === 1 ? '' : 's'}</span
-						>
+						<span class="text-xs text-gray-500 flex-shrink-0">
+							{ramp.paths.length === 1
+								? m.path_single({ count: ramp.paths.length })
+								: m.paths({ count: ramp.paths.length })}
+						</span>
 					</div>
 					<!-- Destination information directly below ramp title - each destination on its own row, centered -->
 					{#if ramp.destination && ramp.destination.length > 0}
@@ -200,7 +207,7 @@
 							{/each}
 						</div>
 					{:else}
-						<div class="text-sm text-gray-600 mb-2 text-center font-bold">Unknown</div>
+						<div class="text-sm text-gray-600 mb-2 text-center font-bold">{m.unknown()}</div>
 					{/if}
 					<!-- Ramp Navigation -->
 					{#if getRampConnections(ramp).fromRamps.length > 0 || getRampConnections(ramp).toRamps.length > 0}
@@ -245,7 +252,7 @@
 							<div class="mb-2 p-2 bg-gray-50 rounded text-xs">
 								<div class="flex items-center justify-between mb-1">
 									<div class="font-medium text-gray-700">
-										Path {j + 1}:
+										{m.path({ number: j + 1 })}
 										<a
 											href="https://www.openstreetmap.org/way/{path.id}"
 											target="_blank"
@@ -256,17 +263,17 @@
 											Way {path.id}
 										</a>
 										{#if path.part > 0}
-											(part {path.part})
+											{m.part({ number: path.part })}
 										{/if}
 									</div>
 									<div class="text-gray-600 text-xs">
-										{path.nodes.length} nodes
+										{m.nodes({ count: path.nodes.length })}
 									</div>
 								</div>
 
 								<!-- Node IDs - Horizontal layout with left alignment -->
 								<div class="text-gray-500 flex items-start">
-									<span class="font-medium mr-2 flex-shrink-0">Nodes:</span>
+									<span class="font-medium mr-2 flex-shrink-0">{m.nodes_label()}</span>
 									<div
 										class="max-h-16 overflow-y-auto text-xs leading-tight flex-1 flex flex-wrap items-start"
 									>

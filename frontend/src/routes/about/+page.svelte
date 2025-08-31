@@ -18,6 +18,7 @@
 		BookOpen,
 		Sparkles
 	} from 'lucide-svelte';
+	import * as m from '$lib/paraglide/messages';
 </script>
 
 <svelte:head>
@@ -32,7 +33,7 @@
 				onclick={() => goto('/')}
 				class="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center shadow-lg"
 			>
-				← Back to Explorer
+				{m.back_to_explorer()}
 			</button>
 		</div>
 		<!-- Header -->

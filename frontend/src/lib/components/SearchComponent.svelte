@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Interchange } from '$lib/types.js';
 	import { ChevronDown, ChevronUp } from 'lucide-svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	let {
 		interchanges = [],
@@ -66,9 +67,9 @@
 <div class="bg-gray-100 p-3 border-b border-gray-300 sticky top-0">
 	<div class="flex justify-between items-center mb-2">
 		<div class="font-bold">
-			Interchanges {!includeWeighStations || !includeServiceAreas || selectedRefFilter !== 'all'
-				? `(filtered: ${filteredInterchanges.length})`
-				: `(${interchanges.length})`}
+			{!includeWeighStations || !includeServiceAreas || selectedRefFilter !== 'all'
+				? m.interchanges_filtered({ count: filteredInterchanges.length })
+				: m.interchanges_total({ count: interchanges.length })}
 		</div>
 		<button
 			onclick={() => (showFilters = !showFilters)}
@@ -80,7 +81,7 @@
 			{:else}
 				<ChevronDown size={16} />
 			{/if}
-			Filters
+			{m.filters()}
 		</button>
 	</div>
 
@@ -88,7 +89,7 @@
 	<input
 		class="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 mb-3"
 		type="search"
-		placeholder="Search by name or #id"
+		placeholder={m.search_placeholder()}
 		bind:value={searchTerm}
 	/>
 
@@ -102,7 +103,7 @@
 					bind:checked={includeWeighStations}
 					class="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
 				/>
-				Include 地磅站 (weigh stations)
+				{m.include_weigh_stations()}
 			</label>
 
 			<!-- 服務區/休息站 checkbox -->
@@ -112,18 +113,18 @@
 					bind:checked={includeServiceAreas}
 					class="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
 				/>
-				Include 服務區/休息站 (service/rest areas)
+				{m.include_service_areas()}
 			</label>
 
 			<!-- Refs filter dropdown -->
 			<div class="flex items-center text-sm text-gray-700 mr-2">
-				<label for="ref-filter" class="mr-2 flex-shrink-0">Route:</label>
+				<label for="ref-filter" class="mr-2 flex-shrink-0">{m.route()}</label>
 				<select
 					id="ref-filter"
 					bind:value={selectedRefFilter}
 					class="flex-1 w-full rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
 				>
-					<option value="all">All routes</option>
+					<option value="all">{m.all_routes()}</option>
 					{#each availableRefs as ref}
 						<option value={ref}>{ref}</option>
 					{/each}
