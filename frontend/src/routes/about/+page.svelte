@@ -22,7 +22,7 @@
 </script>
 
 <svelte:head>
-	<title>About - Taiwan Interchange Explorer</title>
+	<title>{m.about()} - {m.project_title()}</title>
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50 py-8">
@@ -38,7 +38,14 @@
 		</div>
 		<!-- Header -->
 		<div class="mb-8 relative">
-			<h1 class="text-4xl font-bold text-gray-900 mb-3">Taiwan Interchange Explorer</h1>
+			<div class="flex items-center gap-4 mb-3">
+				<img
+					src="/favicon-192x192.png"
+					alt="Taiwan Interchange Explorer Logo"
+					class="w-16 h-16 rounded-lg shadow-sm"
+				/>
+				<h1 class="text-4xl font-bold text-gray-900">Taiwan Interchange Explorer</h1>
+			</div>
 			<p class="text-xl text-gray-600 mb-4">台灣交流道整理與視覺化</p>
 			<p class="text-lg text-gray-700 max-w-3xl mb-3">
 				This website provides comprehensive organization of all Taiwan interchanges with detailed
