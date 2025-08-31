@@ -6,6 +6,7 @@
 	import { interchangesStore, fetchInterchanges } from '$lib/stores/interchanges.js';
 	import type { Interchange } from '$lib/types.js';
 	import { Info } from 'lucide-svelte';
+	import { onMount } from 'svelte';
 
 	let selectedInterchange: Interchange | null = $state(null);
 	let selectedRampIndex: number | null = $state(null);
@@ -14,9 +15,7 @@
 	let filteredInterchanges: Interchange[] = $state([]);
 
 	// Fetch interchanges on mount
-	$effect(() => {
-		fetchInterchanges();
-	});
+	onMount(fetchInterchanges);
 
 	function selectInterchange(interchange: Interchange) {
 		selectedInterchange = interchange;

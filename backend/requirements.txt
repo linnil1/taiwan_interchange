@@ -1,5 +1,3 @@
-Flask
-Flask-Cors
 pydantic
 scikit-learn
 numpy

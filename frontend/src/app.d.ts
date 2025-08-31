@@ -9,7 +9,7 @@ declare global {
 		}
 
 		interface Env {
-			INTERCHANGES_KV: KVNamespace;
+			// Add environment variables here if needed
 		}
 	}
 }
