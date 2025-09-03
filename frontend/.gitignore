@@ -31,3 +31,7 @@ src/lib/paraglide
 
 # Data
 static/interchanges.json
+
+# i18n
+project.inlang/*
+!project.inlang/settings.json

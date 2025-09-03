@@ -89,4 +89,21 @@ Github Page: **https://github.com/linnil1/taiwan-interchange**
 
 ## License & Citation
 
-When using this data or codebase, please cite this project and acknowledge the underlying OpenStreetMap data contributors.
+### Source Code License
+This project's source code is licensed under the **GNU General Public License v3.0 (GPL-3.0)**. 
+
+See the [GPL-3.0 license](https://www.gnu.org/licenses/gpl-3.0.html) for full terms.
+
+### Data License
+The processed interchange data (`interchanges.json`) is licensed under **Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)**.
+
+The underlying OpenStreetMap data is licensed under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/).
+
+### Citation
+When using this data or codebase, please cite this project and acknowledge the underlying OpenStreetMap data contributors:
+
+```
+Taiwan Interchange Explorer by linnil1
+Source: https://github.com/linnil1/taiwan-interchange
+Data derived from OpenStreetMap contributors
+```

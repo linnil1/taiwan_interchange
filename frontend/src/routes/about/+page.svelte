@@ -59,7 +59,7 @@
 		</div>
 
 		<!-- Content -->
-		<div class="space-y-8">
+		<div class="space-y-8 mb-8">
 			<!-- Project Vision -->
 			<section class="bg-white rounded-lg shadow-sm p-6">
 				<h2 class="text-2xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -565,15 +565,129 @@
 							雖然此資料對分析和開發很有用，但在沒有適當驗證和測試的情況下，不應將其作為關鍵導航或安全應用的唯一來源。
 						</p>
 					</div>
-					<div class="bg-blue-50 border-l-4 border-blue-400 p-4">
-						<h3 class="font-medium text-blue-800 mb-2">Citation Requirements / 引用要求</h3>
-						<p class="text-blue-700 text-sm mb-2">
-							If users or AI systems use the data we organize, please cite this website or GitHub
-							repository to acknowledge the work and data processing efforts.
+				</div>
+			</section>
+
+			<!-- License Information -->
+			<section class="bg-white rounded-lg shadow-sm p-6">
+				<h2 class="text-2xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
+					<BookOpen class="w-6 h-6 text-green-600" />
+					License Information / 授權資訊
+				</h2>
+
+				<div class="space-y-6">
+					<div>
+						<h3 class="text-lg font-medium text-gray-700 mb-3 flex items-center gap-2">
+							<Settings class="w-5 h-5 text-green-600" />
+							Source Code License / 程式碼授權
+						</h3>
+						<p class="text-gray-700 mb-3">
+							This project's source code is licensed under the
+							<a
+								href="https://www.gnu.org/licenses/gpl-3.0.html"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-blue-600 hover:text-blue-800 underline font-medium"
+							>
+								<strong>GNU General Public License v3.0 (GPL-3.0)</strong>
+							</a>. You are free to use, modify, and distribute the code, but any derivative works
+							must also be licensed under GPL-3.0.
 						</p>
-						<p class="text-blue-600 text-xs mb-3">
-							如果使用者或AI使用我們整理的資料，請引用此網站或GitHub
-							Repo，以致謝相關工作和資料處理的努力。
+						<p class="text-gray-600 text-sm">
+							此專案的原始碼採用
+							<a
+								href="https://www.gnu.org/licenses/gpl-3.0.html"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-blue-600 hover:text-blue-800 underline font-medium"
+							>
+								<strong>GNU 通用公共許可證 v3.0 (GPL-3.0)</strong>
+							</a> 授權。 您可以自由使用、修改和分發程式碼，但任何衍生作品也必須採用 GPL-3.0 授權。
+						</p>
+					</div>
+
+					<div>
+						<h3 class="text-lg font-medium text-gray-700 mb-3 flex items-center gap-2">
+							<Database class="w-5 h-5 text-blue-600" />
+							Data License / 資料授權
+						</h3>
+						<p class="text-gray-700 mb-3">
+							The processed interchange data (<code class="bg-gray-100 px-1 rounded text-sm"
+								>interchanges.json</code
+							>) is licensed under
+							<a
+								href="https://creativecommons.org/licenses/by-sa/4.0/"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-blue-600 hover:text-blue-800 underline font-medium"
+							>
+								<strong
+									>Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)</strong
+								>
+							</a>. You may share and adapt the data, but must provide attribution and share
+							derivatives under the same license.
+						</p>
+						<p class="text-gray-600 text-sm">
+							處理後的交流道資料 (<code class="bg-gray-100 px-1 rounded text-sm"
+								>interchanges.json</code
+							>) 採用
+							<a
+								href="https://creativecommons.org/licenses/by-sa/4.0/"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-blue-600 hover:text-blue-800 underline font-medium"
+							>
+								<strong>創用CC 姓名標示-相同方式分享 4.0 國際 (CC BY-SA 4.0)</strong>
+							</a> 授權。 您可以分享和改編資料，但必須提供署名並以相同授權分享衍生作品。
+						</p>
+					</div>
+
+					<div>
+						<h3 class="text-lg font-medium text-gray-700 mb-3 flex items-center gap-2">
+							<Globe class="w-5 h-5 text-purple-600" />
+							OpenStreetMap Data / OpenStreetMap 資料
+						</h3>
+						<p class="text-gray-700 mb-3">
+							The underlying geographic data is sourced from OpenStreetMap, which is licensed under
+							the
+							<a
+								href="https://opendatacommons.org/licenses/odbl/"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-blue-600 hover:text-blue-800 underline font-medium"
+							>
+								<strong>Open Database License (ODbL)</strong>
+							</a>. We acknowledge and thank the OSM community for their contributions.
+						</p>
+						<p class="text-gray-600 text-sm">
+							基礎地理資料來源於 OpenStreetMap，採用
+							<a
+								href="https://opendatacommons.org/licenses/odbl/"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-blue-600 hover:text-blue-800 underline font-medium"
+							>
+								<strong>開放資料庫授權 (ODbL)</strong>
+							</a>。 我們致謝 OSM 社群的貢獻。
+						</p>
+					</div>
+
+					<div>
+						<h3 class="text-lg font-medium text-gray-700 mb-3 flex items-center gap-2">
+							<Link class="w-5 h-5 text-gray-600" />
+							Citation / 引用
+						</h3>
+						<p class="text-gray-700 mb-3">
+							If you use our data or code, please cite our
+							<strong>website</strong>
+							or
+							<strong>GitHub repository</strong>.
+						</p>
+						<p class="text-gray-600 text-sm">
+							如果您使用我們的資料或程式碼，請引用我們的
+							<strong>網站</strong>
+							或
+							<strong>GitHub 存儲庫</strong>。
 						</p>
 					</div>
 				</div>
