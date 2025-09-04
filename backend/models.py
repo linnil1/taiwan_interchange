@@ -106,6 +106,21 @@ class Ramp(BaseModel):
         return (start_endpoint, end_endpoint)
 
 
+class WikiData(BaseModel):
+    """Wikipedia data for an interchange, similar to WikiInterchangeData but with URL"""
+
+    name: str
+    exit_text: str
+    km_distance: str
+    region: str
+    forward_direction: list[str] = []
+    reverse_direction: list[str] = []
+    interchange_type: list[str] = []
+    opening_date: list[str] = []
+    connecting_roads: list[str] = []
+    url: str = ""  # Wikipedia URL where this data came from
+
+
 class Bounds(BaseModel):
     """Represents geographical bounds"""
 
@@ -123,6 +138,7 @@ class Interchange(BaseModel):
     bounds: Bounds
     ramps: list[Ramp]
     refs: list[Relation] = []  # freeway route_master relations that this interchange belongs to
+    wiki_data: WikiData | None = None  # Wikipedia data if available
 
     def list_nodes(self) -> list[Node]:
         """Get all nodes from all ramps in this interchange"""

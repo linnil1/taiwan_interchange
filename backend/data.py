@@ -25,6 +25,7 @@ from models import (
     Relation,
     RelationType,
     RoadType,
+    WikiData,
 )
 from osm import (
     OverPassRelation,
@@ -73,6 +74,7 @@ from utils import (
     ramp_contains_way,
     renumber_interchanges,
 )
+from wiki import create_wiki_data_from_interchange, load_all_wiki_interchanges
 
 # ---- Special-case configuration ----
 # Branch isolation: if a branch contains any of these way IDs, make that branch a standalone interchange
@@ -722,7 +724,7 @@ def reorder_and_annotate_interchanges_by_node_index(
     return renumber_interchanges(interchanges)
 
 
-def generate_interchanges_json(use_cache: bool = True) -> bool:
+def generate_interchanges_json(use_cache: bool = True, add_wiki_data: bool = True) -> bool:
     """
     The main function:
     Generate interchanges.json from Overpass API data group them by interchange
@@ -871,18 +873,62 @@ def generate_interchanges_json(use_cache: bool = True) -> bool:
 
     interchanges = reorder_and_annotate_interchanges_by_node_index(interchanges, node_index)
 
-    json_file_path = save_interchanges(interchanges)
-    print(f"Successfully saved interchanges to {json_file_path}")
-
     # Print first few interchanges as sample
     # pprint(interchanges[:3])
+    if add_wiki_data:
+        wiki_highways = load_all_wiki_interchanges(use_cache=use_cache)
+        print(f"Loaded {len(wiki_highways)} Wikipedia highways with interchange data")
+        # Map Wikipedia data
+        interchanges = map_wiki_to_interchanges(interchanges, wiki_highways)
+
+    json_file_path = save_interchanges(interchanges)
+    print(f"Successfully saved interchanges to {json_file_path}")
 
     return True
 
 
+def map_wiki_to_interchanges(interchanges: list[Interchange], wiki_highways) -> list[Interchange]:
+    """
+    Map Wikipedia interchange data to existing interchanges.
+
+    Args:
+        interchanges: List of interchanges to map to Wikipedia data
+        wiki_highways: List of WikiHighway objects with interchange data
+
+    Returns:
+        List of interchanges with wiki_data populated where matches are found
+    """
+    # Create a mapping of interchange names to wiki data
+    wiki_name_map: dict[str, WikiData] = {}
+
+    for highway in wiki_highways:
+        for wiki_interchange in highway.interchanges:
+            # Create WikiData object with URL using transform function
+            wiki_data = create_wiki_data_from_interchange(wiki_interchange, highway.url)
+            wiki_name_map[wiki_interchange.name] = wiki_data
+
+    print(f"Loaded {len(wiki_name_map)} Wikipedia interchange entries")
+
+    # Match interchanges to Wikipedia data
+    matched_count = 0
+    for interchange in interchanges:
+        # Handle multiple names separated by semicolon
+        names_to_try = [name.strip().replace("交流道", "") for name in interchange.name.split(";")]
+
+        for name in names_to_try:
+            if name in wiki_name_map:
+                interchange.wiki_data = wiki_name_map[name]
+                matched_count += 1
+                print(f"Matched '{interchange.name}' to Wikipedia data")
+                break
+
+    print(f"Successfully matched {matched_count} interchanges to Wikipedia data")
+    return interchanges
+
+
 if __name__ == "__main__":
     print("Generating interchanges data from Overpass API...")
-    success = generate_interchanges_json(use_cache=True)
+    success = generate_interchanges_json(use_cache=True, add_wiki_data=True)
     if success:
         print("\n✅ Successfully generated interchanges.json")
         print("You can now run the Flask app with: python app.py")

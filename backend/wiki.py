@@ -9,6 +9,7 @@ import json
 import os
 
 import requests
+from models import WikiData
 from bs4 import BeautifulSoup
 from openai import OpenAI
 from pydantic import BaseModel
@@ -209,6 +210,24 @@ def load_all_wiki_interchanges(use_cache: bool = True) -> list[WikiHighway]:
         all_data.append(data)
 
     return all_data
+
+
+def create_wiki_data_from_interchange(
+    wiki_interchange: WikiInterchangeData, highway_url: str
+) -> WikiData:
+    """Transform WikiInterchangeData to WikiData with URL."""
+    return WikiData(
+        name=wiki_interchange.name,
+        exit_text=wiki_interchange.exit_text,
+        km_distance=wiki_interchange.km_distance,
+        region=wiki_interchange.region,
+        forward_direction=wiki_interchange.forward_direction,
+        reverse_direction=wiki_interchange.reverse_direction,
+        interchange_type=wiki_interchange.interchange_type,
+        opening_date=wiki_interchange.opening_date,
+        connecting_roads=wiki_interchange.connecting_roads,
+        url=highway_url,
+    )
 
 
 if __name__ == "__main__":
