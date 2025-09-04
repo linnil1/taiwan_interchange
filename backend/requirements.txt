@@ -2,3 +2,6 @@ pydantic
 scikit-learn
 numpy
 networkx
+requests
+beautifulsoup4
+openai
