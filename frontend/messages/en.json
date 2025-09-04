@@ -27,5 +27,14 @@
 	"previous_ramps": "Previous ramps",
 	"next_ramps": "Next ramps",
 	"paths": "{count} paths",
-	"path_single": "{count} path"
+	"path_single": "{count} path",
+	"wikipedia_data": "Wikipedia Data",
+	"wiki_exit": "Exit:",
+	"wiki_distance": "Distance:",
+	"wiki_region": "Region:",
+	"wiki_type": "Type:",
+	"wiki_opened": "Opened:",
+	"wiki_forward": "Forward:",
+	"wiki_reverse": "Reverse:",
+	"wiki_connecting_roads": "Connecting Roads:"
 }

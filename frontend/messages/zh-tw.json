@@ -27,5 +27,14 @@
 	"previous_ramps": "前方匝道",
 	"next_ramps": "後方匝道",
 	"paths": "{count} 路徑",
-	"path_single": "{count} 路徑"
+	"path_single": "{count} 路徑",
+	"wikipedia_data": "維基百科資料",
+	"wiki_exit": "標誌：",
+	"wiki_distance": "里程：",
+	"wiki_region": "區域：",
+	"wiki_type": "形式：",
+	"wiki_opened": "通車日：",
+	"wiki_forward": "順樁預告：",
+	"wiki_reverse": "逆樁預告：",
+	"wiki_connecting_roads": "銜接道路："
 }

@@ -90,28 +90,6 @@
 						? m.ramp({ count: interchange.ramps.length })
 						: m.ramps({ count: interchange.ramps.length })}
 				</div>
-				<!-- Show refs if available -->
-				{#if interchange.refs && interchange.refs.length > 0}
-					<div class="mt-2">
-						<div class="text-xs text-gray-500 mb-1">{m.connected_to()}</div>
-						<div class="flex flex-wrap gap-1">
-							{#each interchange.refs as ref}
-								<span
-									class="inline-flex items-center rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 border border-blue-200"
-								>
-									<a
-										href="https://www.openstreetmap.org/relation/{ref.id}"
-										target="_blank"
-										rel="noopener noreferrer"
-										class="hover:underline"
-									>
-										{ref.name}
-									</a>
-								</span>
-							{/each}
-						</div>
-					</div>
-				{/if}
 			</div>
 			<button
 				class="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition-colors flex-shrink-0 flex items-center gap-1"
@@ -133,9 +111,117 @@
 			Lng: {interchange.bounds.min_lng.toFixed(6)} to {interchange.bounds.max_lng.toFixed(6)}
 		</div>
 		-->
+		<!-- Show refs if available -->
+		{#if interchange.refs && interchange.refs.length > 0}
+			<div class="mt-2">
+				<div class="text-xs text-gray-500 mb-1">{m.connected_to()}</div>
+				<div class="flex flex-wrap gap-1">
+					{#each interchange.refs as ref}
+						<span
+							class="inline-flex items-center rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 border border-blue-200"
+						>
+							<a
+								href="https://www.openstreetmap.org/relation/{ref.id}"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="hover:underline"
+							>
+								{ref.name}
+							</a>
+						</span>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
+		<!-- Wikipedia Data Section -->
+		{#if interchange.wiki_data}
+			<div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded w-full">
+				<h3 class="text-sm font-semibold text-blue-800 mb-2">
+					<a
+						href={interchange.wiki_data.url}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="hover:underline"
+					>
+						{m.wikipedia_data()}
+					</a>
+				</h3>
+
+				<div class="space-y-2 text-xs">
+					{#if interchange.wiki_data.exit_text}
+						<div class="flex">
+							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_exit()}</span>
+							<span class="text-gray-600 flex-1">{interchange.wiki_data.exit_text}</span>
+						</div>
+					{/if}
+
+					{#if interchange.wiki_data.km_distance}
+						<div class="flex">
+							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_distance()}</span>
+							<span class="text-gray-600 flex-1">{interchange.wiki_data.km_distance} km</span>
+						</div>
+					{/if}
+
+					{#if interchange.wiki_data.region}
+						<div class="flex">
+							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_region()}</span>
+							<span class="text-gray-600 flex-1">{interchange.wiki_data.region}</span>
+						</div>
+					{/if}
+
+					{#if interchange.wiki_data.interchange_type && interchange.wiki_data.interchange_type.length > 0}
+						<div class="flex">
+							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_type()}</span>
+							<span class="text-gray-600 flex-1"
+								>{interchange.wiki_data.interchange_type.join(', ')}</span
+							>
+						</div>
+					{/if}
+
+					{#if interchange.wiki_data.opening_date && interchange.wiki_data.opening_date.length > 0}
+						<div class="flex">
+							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_opened()}</span>
+							<span class="text-gray-600 flex-1"
+								>{interchange.wiki_data.opening_date.join(', ')}</span
+							>
+						</div>
+					{/if}
+
+					{#if interchange.wiki_data.forward_direction && interchange.wiki_data.forward_direction.length > 0}
+						<div class="flex">
+							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_forward()}</span>
+							<span class="text-gray-600 flex-1"
+								>{interchange.wiki_data.forward_direction.join(', ')}</span
+							>
+						</div>
+					{/if}
+
+					{#if interchange.wiki_data.reverse_direction && interchange.wiki_data.reverse_direction.length > 0}
+						<div class="flex">
+							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_reverse()}</span>
+							<span class="text-gray-600 flex-1"
+								>{interchange.wiki_data.reverse_direction.join(', ')}</span
+							>
+						</div>
+					{/if}
+
+					{#if interchange.wiki_data.connecting_roads && interchange.wiki_data.connecting_roads.length > 0}
+						<div class="flex">
+							<span class="font-medium text-gray-700 w-16 flex-shrink-0"
+								>{m.wiki_connecting_roads()}</span
+							>
+							<span class="text-gray-600 flex-1"
+								>{interchange.wiki_data.connecting_roads.join(', ')}</span
+							>
+						</div>
+					{/if}
+				</div>
+			</div>
+		{/if}
 
 		<!-- Ramps List -->
-		<div>
+		<div class="mt-8">
 			{#each interchange.ramps as ramp, i}
 				<div
 					bind:this={rampElements[i]}

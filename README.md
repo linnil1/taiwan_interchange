@@ -6,10 +6,11 @@ This project provides comprehensive organization and visualization of all Taiwan
 
 ```
 taiwan-interchange/
-├── backend/                 # Python data processing engine
+├── backend/                # Python data processing engine
 │   ├── data.py             # Main data processing and generation
-│   ├── models.py           # Pydantic data models
-│   ├── interchanges.json   # Generated interchange data
+│   ├── osm.py              # OpenStreetMap extraction and parsing
+│   ├── wiki.py             # Wikipedia data extraction and parsing
+│   ├── interchanges.json   # Generated interchange data with Wikipedia integration
 │   └── requirements.txt    # Python dependencies
 ├── frontend/               # SvelteKit web application
 │   ├── src/
@@ -26,7 +27,7 @@ taiwan-interchange/
 ```
 
 The system operates with a simple architecture:
-- **Data Processing**: Python backend processes OpenStreetMap data and generates JSON
+- **Data Processing**: Python backend processes OpenStreetMap and Wikipedia data and generates JSON
 - **Static Serving**: Both development and production serve data from static assets
 
 ## Development Setup
@@ -51,7 +52,7 @@ The system operates with a simple architecture:
    ```bash
    python data.py
    ```
-   This will process OpenStreetMap data and save `interchanges.json` to both `backend/` and `frontend/static/`
+   This will process OpenStreetMap and Wikipedia data and save `interchanges.json` to both `backend/` and `frontend/static/`
 
 ### Frontend Development  
 1. Navigate to the frontend directory:
@@ -99,11 +100,13 @@ The processed interchange data (`interchanges.json`) is licensed under **Creativ
 
 The underlying OpenStreetMap data is licensed under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/).
 
+Wikipedia content is available under [Creative Commons Attribution-ShareAlike 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
+
 ### Citation
 When using this data or codebase, please cite this project and acknowledge the underlying OpenStreetMap data contributors:
 
 ```
 Taiwan Interchange Explorer by linnil1
 Source: https://github.com/linnil1/taiwan-interchange
-Data derived from OpenStreetMap contributors
+Data derived from OpenStreetMap contributors and Wikipedia
 ```

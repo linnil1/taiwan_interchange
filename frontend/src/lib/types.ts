@@ -89,6 +89,29 @@ export interface Relation {
 	relation_type: RelationType;
 }
 
+export interface WikiData {
+	/** Wikipedia interchange name */
+	name: string;
+	/** Exit text like "0 左營端" */
+	exit_text: string;
+	/** Distance in kilometers as string */
+	km_distance: string;
+	/** Region or area */
+	region: string;
+	/** Forward/southbound direction destinations */
+	forward_direction: string[];
+	/** Reverse/northbound direction destinations */
+	reverse_direction: string[];
+	/** Types of interchange */
+	interchange_type: string[];
+	/** Opening dates */
+	opening_date: string[];
+	/** Connecting roads */
+	connecting_roads: string[];
+	/** Wikipedia URL where this data came from */
+	url: string;
+}
+
 export interface Interchange {
 	/** Unique identifier for the interchange */
 	id: number;
@@ -100,6 +123,8 @@ export interface Interchange {
 	ramps: Ramp[];
 	/** Freeway route_master relations that this interchange belongs to */
 	refs: Relation[];
+	/** Wikipedia data if available */
+	wiki_data?: WikiData;
 }
 
 // Utility types for API responses
@@ -165,6 +190,22 @@ export function isRelation(obj: any): obj is Relation {
 	);
 }
 
+export function isWikiData(obj: any): obj is WikiData {
+	return (
+		typeof obj === 'object' &&
+		typeof obj.name === 'string' &&
+		typeof obj.exit_text === 'string' &&
+		typeof obj.km_distance === 'string' &&
+		typeof obj.region === 'string' &&
+		Array.isArray(obj.forward_direction) &&
+		Array.isArray(obj.reverse_direction) &&
+		Array.isArray(obj.interchange_type) &&
+		Array.isArray(obj.opening_date) &&
+		Array.isArray(obj.connecting_roads) &&
+		typeof obj.url === 'string'
+	);
+}
+
 export function isInterchange(obj: any): obj is Interchange {
 	return (
 		typeof obj === 'object' &&
@@ -174,6 +215,7 @@ export function isInterchange(obj: any): obj is Interchange {
 		Array.isArray(obj.ramps) &&
 		obj.ramps.every(isRamp) &&
 		Array.isArray(obj.refs) &&
-		obj.refs.every(isRelation)
+		obj.refs.every(isRelation) &&
+		(obj.wiki_data === undefined || obj.wiki_data === null || isWikiData(obj.wiki_data))
 	);
 }
