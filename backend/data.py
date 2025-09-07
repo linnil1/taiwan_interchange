@@ -1,12 +1,14 @@
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from itertools import chain
+from typing import TypeVar
 
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
 
 from gov import (
     GovHighwayData,
+    copy_freeway_pdfs_to_static,
     create_gov_data_from_interchange,
     load_all_gov_interchanges,
 )
@@ -80,7 +82,7 @@ from utils import (
     ramp_contains_way,
     renumber_interchanges,
 )
-from wiki import create_wiki_data_from_interchange, load_all_wiki_interchanges
+from wiki import WikiHighway, create_wiki_data_from_interchange, load_all_wiki_interchanges
 
 # ---- Special-case configuration ----
 # Branch isolation: if a branch contains any of these way IDs, make that branch a standalone interchange
@@ -144,14 +146,14 @@ EXCLUDED_WAY_IDS: set[int] = set()
 PRESERVED_ENDPOINT_WAY_IDS: set[int] = {439876652, 439876651}  # 機場端
 
 WIKI_NAME_MAPPING = {
-    "瑞隆路出口匝道": "瑞隆路",
-    "高架道路汐止端": "汐止端",
-    "南深路出口匝道": "南深路",
+    "汐止端": "高架道路汐止端",
+    "瑞隆路": "瑞隆路出口匝道",
+    "南深路": "南深路出口匝道",
 }
 
 GOV_NAME_MAPPING = {
-    "高架道路楊梅端": "楊梅端",
-    "高架道路汐止端": "汐止端",
+    "楊梅端": "高架道路楊梅端",
+    "汐止端": "高架道路汐止端",
 }
 
 SHOW_MATCH_LOG = False
@@ -906,7 +908,9 @@ def generate_interchanges_json(
         gov_highways = load_all_gov_interchanges(use_cache=use_cache)
         print(f"Loaded {len(gov_highways)} Government highways with interchange data")
         # Map Government data
+        gov_highways = copy_freeway_pdfs_to_static(gov_highways)
         interchanges = map_gov_to_interchanges(interchanges, gov_highways)
+        # Copy freeway PDFs to static folder
 
     json_file_path = save_interchanges(interchanges, save_static=True)
     print(f"Successfully saved interchanges to {json_file_path}")
@@ -914,7 +918,70 @@ def generate_interchanges_json(
     return True
 
 
-def map_wiki_to_interchanges(interchanges: list[Interchange], wiki_highways) -> list[Interchange]:
+T = TypeVar("T")
+
+
+def map_external_to_interchanges(
+    interchanges: list[Interchange], external_data_map: dict[str, T]
+) -> list[list[T]]:
+    """
+    Generic function to map external data to interchanges based on name matching.
+
+    Args:
+        interchanges: List of interchanges to map external data to
+        external_data_map: Dictionary mapping interchange names to external data objects
+
+    Returns:
+        List of lists where each inner list contains matched external data for the corresponding interchange
+    """
+    # Match interchanges to external data
+    result: list[list[T]] = []
+    matched_count = 0
+
+    for interchange in interchanges:
+        # Handle multiple names separated by semicolon
+        names_to_try = [name.strip() for name in interchange.name.split(";")]
+        names_matched = {name for name in names_to_try if name in external_data_map}
+        if not names_matched:
+            result.append([])
+            continue
+
+        if SHOW_MATCH_LOG:
+            print(f"✅ Matched '{interchange.name}' to external data: {names_matched}")
+
+        # Add all matched external data
+        matched_data = [external_data_map[name] for name in names_matched]
+        result.append(matched_data)
+        matched_count += 1
+
+    print(f"Successfully matched {matched_count}/{len(interchanges)} interchanges to external data")
+
+    # Show not match summary
+    if SHOW_MATCH_LOG:
+        unmatched_interchanges = [ic for i, ic in enumerate(interchanges) if not result[i]]
+        print(f"Unmatched interchanges: {len(unmatched_interchanges)}")
+        for interchange in unmatched_interchanges:
+            print(f"  Interchange '{interchange.name}' not matched to any external entry")
+
+        all_matched_data = {
+            getattr(data, "name", str(data)) for data_list in result for data in data_list
+        }
+        unmatched_external = []
+        for data in external_data_map.values():
+            name = getattr(data, "name", str(data))
+            if name not in all_matched_data:
+                unmatched_external.append(name)
+
+        print(f"Unmatched external entries: {len(unmatched_external)}")
+        for name in sorted(set(unmatched_external)):
+            print(f"  External entry '{name}' not matched to any interchange")
+
+    return result
+
+
+def map_wiki_to_interchanges(
+    interchanges: list[Interchange], wiki_highways: list[WikiHighway]
+) -> list[Interchange]:
     """
     Map Wikipedia interchange data to existing interchanges.
 
@@ -932,37 +999,25 @@ def map_wiki_to_interchanges(interchanges: list[Interchange], wiki_highways) -> 
         for wiki_interchange in highway.interchanges:
             # Create WikiData object with URL using transform function
             wiki_data = create_wiki_data_from_interchange(wiki_interchange, highway.url)
-            wiki_name_map[wiki_interchange.name] = wiki_data
 
-    print(f"Loaded {len(wiki_name_map)} Wikipedia interchange entries")
+            # Apply name mapping if needed
+            if wiki_interchange.name in WIKI_NAME_MAPPING:
+                mapped_name = WIKI_NAME_MAPPING[wiki_interchange.name]
+                wiki_name_map[mapped_name] = wiki_data
+            else:
+                # Handle "交流道" suffix: add both with and without suffix as keys
+                clean_name = wiki_interchange.name.strip()
+                wiki_name_map[clean_name] = wiki_data
+                if not clean_name.endswith("交流道"):
+                    wiki_name_map[clean_name + "交流道"] = wiki_data
 
-    # Match interchanges to Wikipedia data
-    for interchange in interchanges:
-        # Handle multiple names separated by semicolon
-        names_to_try = [name.strip().replace("交流道", "") for name in interchange.name.split(";")]
+    # Get matched data using the generic function
+    matched_wikis = map_external_to_interchanges(interchanges, wiki_name_map)
 
-        if interchange.name in WIKI_NAME_MAPPING:
-            names_to_try.append(WIKI_NAME_MAPPING[interchange.name])
+    # Set the wikis attribute for each interchange
+    for interchange, wikis in zip(interchanges, matched_wikis):
+        interchange.wikis = wikis
 
-        names_matched = {name for name in names_to_try if name in wiki_name_map}
-        if not names_matched:
-            continue
-        if SHOW_MATCH_LOG:
-            print(f"Interchange '{interchange.name}' matched to Wikipedia entries: {names_matched}")
-        interchange.wikis = [wiki_name_map[name] for name in names_matched]
-
-    matched_count = sum(1 for ic in interchanges if ic.wikis)
-    print(f"Successfully matched {matched_count} interchanges to Wikipedia data")
-
-    # show not match summary
-    if SHOW_MATCH_LOG:
-        for interchange in interchanges:
-            if not interchange.wikis:
-                print(f"Interchange '{interchange.name}' not matched to any Wikipedia entry")
-        all_matched_wikis = {wiki.name for ic in interchanges for wiki in ic.wikis}
-        for name in sorted(wiki_name_map.keys()):
-            if name not in all_matched_wikis:
-                print(f"Wikipedia entry '{name}' not matched to any interchange")
     return interchanges
 
 
@@ -986,53 +1041,22 @@ def map_gov_to_interchanges(
         for gov_interchange_data in highway.interchanges:
             gov_data = create_gov_data_from_interchange(gov_interchange_data, highway.url)
 
-            # Use name without "交流道" suffix as key for better matching
+            # Apply name mapping if needed
             if gov_interchange_data.name in GOV_NAME_MAPPING:
-                gov_name_map[GOV_NAME_MAPPING[gov_interchange_data.name]] = gov_data
-                continue
-            clean_name = gov_interchange_data.name.replace("交流道", "").strip()
-            gov_name_map[clean_name] = gov_data
+                mapped_name = GOV_NAME_MAPPING[gov_interchange_data.name]
+                gov_name_map[mapped_name] = gov_data
+            else:
+                clean_name = gov_interchange_data.name.strip()
+                gov_name_map[clean_name] = gov_data
+                if not clean_name.endswith("交流道"):
+                    gov_name_map[clean_name + "交流道"] = gov_data
 
-    print(f"Loaded {len(gov_name_map)} Government interchange entries")
+    # Get matched data using the generic function
+    matched_govs = map_external_to_interchanges(interchanges, gov_name_map)
 
-    # Match interchanges to Government data
-    matched_count = 0
-    for interchange in interchanges:
-        # Handle multiple names separated by semicolon
-        names_to_try = [name.strip().replace("交流道", "") for name in interchange.name.split(";")]
-
-        names_matched = {name for name in names_to_try if name in gov_name_map}
-        if not names_matched:
-            continue
-
-        if SHOW_MATCH_LOG:
-            print(f"✅ Matched '{interchange.name}' to Government data: {names_matched}")
-
-        # Add all matched government data
-        interchange.govs = [gov_name_map[name] for name in names_matched]
-
-        matched_count += 1
-
-    print(
-        f"Successfully matched {matched_count}/{len(interchanges)} interchanges to Government data"
-    )
-
-    # show not match summary
-    if SHOW_MATCH_LOG:
-        unmatched_interchanges = [ic for ic in interchanges if not ic.govs]
-        print(f"Unmatched interchanges: {len(unmatched_interchanges)}")
-        for interchange in unmatched_interchanges:
-            print(f"  Interchange '{interchange.name}' not matched to any Government entry")
-
-        all_matched_govs = {gov.name for ic in interchanges for gov in ic.govs}
-        unmatched_govs = [
-            gov_data.name
-            for gov_data in gov_name_map.values()
-            if gov_data.name not in all_matched_govs
-        ]
-        print(f"Unmatched government entries: {len(unmatched_govs)}")
-        for name in unmatched_govs:
-            print(f"  Government entry '{name}' not matched to any interchange")
+    # Set the govs attribute for each interchange
+    for interchange, govs in zip(interchanges, matched_govs):
+        interchange.govs = govs
 
     return interchanges
 

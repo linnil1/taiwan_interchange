@@ -3,6 +3,8 @@
 import json
 import os
 import re
+import shutil
+import subprocess
 import time
 from collections.abc import Sequence
 from typing import Literal
@@ -22,6 +24,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Constants
 EMPTY_PATTERN = ["　", "&nbsp;"]
 EMPTY_TEXT_PATTERNS = ["-" * i for i in range(1, 10)] + EMPTY_PATTERN
+
+IMG_FOLDER = "freeway_imgs"
 
 
 class GovInterchangeData(BaseModel):
@@ -58,6 +62,111 @@ class GovHighwayData(BaseModel):
     title: str  # Raw title text above table
     url: str
     interchanges: list[GovInterchangeData] = Field(default_factory=list)
+
+
+def download_pdf(url: str, output_path: str) -> bool:
+    """Download PDF from URL to specified path."""
+    response = requests.get(url, timeout=30, verify=False)
+    response.raise_for_status()
+
+    with open(output_path, "wb") as f:
+        f.write(response.content)
+    return True
+
+
+def freeway_pdf_to_img(pdf_path: str, output_path: str) -> str:
+    """
+    Download PDF from URL and convert it to PNG using podman.
+
+    Args:
+        pdf_url: URL of the PDF to download and convert
+        output_dir: Directory to store PDFs and PNGs
+
+    Returns:
+        Path to the generated PNG file, or None if conversion failed
+    """
+    # Extract filename from URL (preserve the naming from the last part of URL)
+    abs_input_dir = os.path.abspath(pdf_path)
+    abs_output_dir = os.path.abspath(os.path.dirname(output_path))
+    name = os.path.basename(output_path)
+
+    cmd = [
+        "podman",
+        "run",
+        "-it",
+        "--rm",
+        "-v",
+        f"{abs_input_dir}:/input",
+        "-v",
+        f"{abs_output_dir}:/output",
+        "docker.io/minidocks/poppler:latest",
+        "pdftoppm",
+        "-jpeg",
+        "/input",
+        f"/output/{name}",
+    ]
+
+    # Execute conversion
+    result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0
+    for i in range(1, 10):
+        img_file = os.path.join(abs_output_dir, f"{name}-{i}.jpg")
+        if os.path.exists(img_file):
+            return img_file
+    print(" ".join(cmd))
+    raise AssertionError("No image file generated")
+
+
+def process_interchange_pdfs(interchange: GovInterchangeData) -> GovInterchangeData:
+    """
+    Process an interchange to find PDFs in URL and convert them to PNG.
+
+    Args:
+        interchange: GovInterchangeData object with potential PDF URL
+
+    Returns:
+        Updated GovInterchangeData with PNG conversion information
+    """
+    if not interchange.url or not interchange.url.lower().endswith(".pdf"):
+        return interchange
+
+    print(f"Found PDF URL for {interchange.name}: {interchange.url}")
+
+    # Ensure folder exists
+    pdf_dir = os.path.join(os.path.dirname(__file__), "freeway_pdfs")
+    img_dir = os.path.join(os.path.dirname(__file__), IMG_FOLDER)
+    os.makedirs(pdf_dir, exist_ok=True)
+    os.makedirs(img_dir, exist_ok=True)
+    pdf_name = os.path.join(pdf_dir, f"{interchange.name}.pdf")
+    img_name = os.path.join(img_dir, f"{interchange.name}")
+
+    # main
+    download_pdf(interchange.url, pdf_name)
+    img_name = freeway_pdf_to_img(pdf_name, img_name)
+    img_rel_name = os.path.relpath(img_name, os.path.join(os.path.dirname(__file__)))
+    interchange.url = img_rel_name
+    print(f"Converted PDF to image for {interchange.name}: {interchange.url}")
+    return interchange
+
+
+def copy_freeway_pdfs_to_static(gov_highways: list[GovHighwayData]) -> list[GovHighwayData]:
+    """Copy freeway_pdfs folder to frontend static directory."""
+    frontend_freeway_folder = os.path.join(
+        os.path.dirname(__file__), "..", "frontend", "static", IMG_FOLDER
+    )
+    if os.path.exists(frontend_freeway_folder):
+        shutil.rmtree(frontend_freeway_folder)
+    os.makedirs(frontend_freeway_folder, exist_ok=True)
+
+    for highway in gov_highways:
+        for interchange in highway.interchanges:
+            if interchange.url and not interchange.url.startswith("http"):
+                filename = os.path.join(os.path.dirname(__file__), interchange.url)
+                # interchange.url = os.path.join("/static", interchange.url)
+                # copy file
+                print(f"Copied {filename} to {frontend_freeway_folder}, url: {interchange.url}")
+                shutil.copy2(filename, frontend_freeway_folder)
+    return gov_highways
 
 
 def get_webpage_content(url: str) -> BeautifulSoup:
@@ -442,6 +551,13 @@ def get_all_gov_highway() -> list[GovHighwayData]:
     all_data = []
     for url in urls:
         highway_data_list = read_gov_highway_content(url)
+
+        # Process each highway data to find and convert PDFs
+        for highway_data in highway_data_list:
+            highway_data.interchanges = [
+                process_interchange_pdfs(interchange) for interchange in highway_data.interchanges
+            ]
+
         all_data.extend(highway_data_list)
         time.sleep(1)  # Be polite and avoid overwhelming the server
     return all_data

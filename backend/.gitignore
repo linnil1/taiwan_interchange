@@ -2,3 +2,5 @@ __pycache__
 .ruff_cache
 *.json
 pyproject.toml
+freeway_imgs
+freeway_pdfs
