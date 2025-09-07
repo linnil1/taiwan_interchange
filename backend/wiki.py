@@ -9,14 +9,38 @@ import json
 import os
 
 import requests
-from models import WikiData
 from bs4 import BeautifulSoup
 from openai import OpenAI
 from pydantic import BaseModel
 
+from models import WikiData
+
 # Constants
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-4.1-mini"
+
+# List of Wikipedia URLs to scrape
+# https://zh.wikipedia.org/wiki/中華民國國道
+WIKI_URLS = [
+    # 1
+    "https://zh.wikipedia.org/wiki/中山高速公路交流道列表",
+    # 2
+    "https://zh.wikipedia.org/wiki/國道二號_(中華民國)",
+    "https://zh.wikipedia.org/wiki/國道二號甲線",
+    # 3
+    "https://zh.wikipedia.org/wiki/福爾摩沙高速公路交流道列表",
+    "https://zh.wikipedia.org/wiki/國道三號甲線",
+    # 4
+    "https://zh.wikipedia.org/wiki/國道四號_(中華民國)",
+    # 5
+    "https://zh.wikipedia.org/wiki/蔣渭水高速公路交流道列表",
+    # 6
+    "https://zh.wikipedia.org/wiki/水沙連高速公路",
+    # 8
+    "https://zh.wikipedia.org/wiki/國道八號_(中華民國)",
+    # 10
+    "https://zh.wikipedia.org/wiki/國道十號_(中華民國)",
+]
 
 
 class WikiInterchangeData(BaseModel):
@@ -31,6 +55,7 @@ class WikiInterchangeData(BaseModel):
     interchange_type: list[str] = []
     opening_date: list[str] = []
     connecting_roads: list[str] = []
+    url: str = ""  # Optional Wikipedia page URL for the specific interchange
 
 
 class WikiHighway(BaseModel):
@@ -43,30 +68,6 @@ class WikiHighway(BaseModel):
     length_km: str
     alt_names: list[str] = []
     interchanges: list[WikiInterchangeData] = []
-
-
-# List of Wikipedia URLs to scrape
-# https://zh.wikipedia.org/wiki/中華民國國道
-WIKI_URLS = [
-    # 1
-    "https://zh.wikipedia.org/wiki/中山高速公路交流道列表",
-    # 2
-    "https://zh.wikipedia.org/wiki/國道二號_(中華民國)",
-    "https://zh.wikipedia.org/wiki/國道二號甲線",
-    # 3
-    "https://zh.wikipedia.org/wiki/福爾摩沙高速公路交流道列表",
-    "https://zh.wikipedia.org/wiki/國道三號甲線"
-    # 4
-    "https://zh.wikipedia.org/wiki/國道四號_(中華民國)",
-    # 5
-    "https://zh.wikipedia.org/wiki/蔣渭水高速公路交流道列表",
-    # 6
-    "https://zh.wikipedia.org/wiki/水沙連高速公路",
-    # 8
-    "https://zh.wikipedia.org/wiki/國道八號_(中華民國)",
-    # 10
-    "https://zh.wikipedia.org/wiki/國道十號_(中華民國)",
-]
 
 
 def fetch_website(url: str) -> str | None:
@@ -119,7 +120,8 @@ Schema (keys must appear):
       "reverse_direction": [string],
       "interchange_type": [string],
       "opening_date": [string],
-      "connecting_roads": [string]
+      "connecting_roads": [string],
+      "url": string                // Wikipedia URL for this specific interchange if linked, "" if none
     }}
   ]
 }}
@@ -127,6 +129,7 @@ Schema (keys must appear):
 Instructions:
 - Extract interchange rows from tables and any inline lists that represent interchanges. Treat entries like "里港地磅站設置於里港交流道西行入口匝道" or "335.1仁德服務區" as interchanges: fill at least the name and any other available fields.
 - Use table cells and nearby labels to populate fields. Infer values only when clear; otherwise use empty string "" or empty array [] as specified.
+- For each interchange, if the name is a hyperlink, extract the full Wikipedia URL and put it in the "url" field. If not linked, use "".
 - Remove HTML tags, decode entities, trim and normalize whitespace.
 - Preserve the page order of interchanges.
 - All array fields must be arrays of strings (use [] if missing). Fields that are single text should be strings.
@@ -215,7 +218,7 @@ def load_all_wiki_interchanges(use_cache: bool = True) -> list[WikiHighway]:
 def create_wiki_data_from_interchange(
     wiki_interchange: WikiInterchangeData, highway_url: str
 ) -> WikiData:
-    """Transform WikiInterchangeData to WikiData with URL."""
+    """Transform WikiInterchangeData to WikiData with URLs."""
     return WikiData(
         name=wiki_interchange.name,
         exit_text=wiki_interchange.exit_text,
@@ -226,13 +229,14 @@ def create_wiki_data_from_interchange(
         interchange_type=wiki_interchange.interchange_type,
         opening_date=wiki_interchange.opening_date,
         connecting_roads=wiki_interchange.connecting_roads,
-        url=highway_url,
+        url=highway_url,  # Highway page URL (always present)
+        interchange_url=wiki_interchange.url,  # Specific interchange page URL (optional)
     )
 
 
 if __name__ == "__main__":
     from pprint import pprint
 
-    all_data = load_all_wiki_interchanges(use_cache=True)
+    all_data = load_all_wiki_interchanges(use_cache=False)
     for data in all_data:
         pprint(data.model_dump())

@@ -14,8 +14,8 @@ def load_interchanges() -> list[Interchange]:
     return datas
 
 
-def save_interchanges(interchanges: list[Interchange]) -> str:
-    """Save interchanges data to JSON file in both backend and frontend static directories"""
+def save_interchanges(interchanges: list[Interchange], save_static: bool = True) -> str:
+    """Save interchanges data to JSON file in backend and optionally frontend static directories"""
     backend_json_file_path = os.path.join(os.path.dirname(__file__), "interchanges.json")
     frontend_static_path = os.path.join(
         os.path.dirname(__file__), "../frontend/static/interchanges.json"
@@ -27,12 +27,13 @@ def save_interchanges(interchanges: list[Interchange]) -> str:
     with open(backend_json_file_path, "w", encoding="utf-8") as f:
         json.dump(interchanges_dict, f, indent=2, ensure_ascii=False)
 
-    # Also save to frontend static directory (for production deployment)
-    os.makedirs(os.path.dirname(frontend_static_path), exist_ok=True)
-    with open(frontend_static_path, "w", encoding="utf-8") as f:
-        json.dump(interchanges_dict, f, indent=2, ensure_ascii=False)
-
     print(f"Saved to backend: {backend_json_file_path}")
-    print(f"Saved to frontend static: {frontend_static_path}")
+
+    # Optionally save to frontend static directory (for production deployment)
+    if save_static:
+        os.makedirs(os.path.dirname(frontend_static_path), exist_ok=True)
+        with open(frontend_static_path, "w", encoding="utf-8") as f:
+            json.dump(interchanges_dict, f, indent=2, ensure_ascii=False)
+        print(f"Saved to frontend static: {frontend_static_path}")
 
     return backend_json_file_path

@@ -108,8 +108,10 @@ export interface WikiData {
 	opening_date: string[];
 	/** Connecting roads */
 	connecting_roads: string[];
-	/** Wikipedia URL where this data came from */
+	/** Wikipedia URL where this data came from (highway page) */
 	url: string;
+	/** Wikipedia URL for interchange-specific page (if exists) */
+	interchange_url: string;
 }
 
 export interface Interchange {
@@ -124,7 +126,7 @@ export interface Interchange {
 	/** Freeway route_master relations that this interchange belongs to */
 	refs: Relation[];
 	/** Wikipedia data if available */
-	wiki_data?: WikiData;
+	wikis: WikiData[];
 }
 
 // Utility types for API responses
@@ -216,6 +218,7 @@ export function isInterchange(obj: any): obj is Interchange {
 		obj.ramps.every(isRamp) &&
 		Array.isArray(obj.refs) &&
 		obj.refs.every(isRelation) &&
-		(obj.wiki_data === undefined || obj.wiki_data === null || isWikiData(obj.wiki_data))
+		Array.isArray(obj.wikis) &&
+		obj.wikis.every(isWikiData)
 	);
 }

@@ -118,7 +118,8 @@ class WikiData(BaseModel):
     interchange_type: list[str] = []
     opening_date: list[str] = []
     connecting_roads: list[str] = []
-    url: str = ""  # Wikipedia URL where this data came from
+    url: str = ""  # Wikipedia URL where this data came from (highway page)
+    interchange_url: str = ""  # Wikipedia URL for interchange-specific page (if exists)
 
 
 class Bounds(BaseModel):
@@ -138,7 +139,7 @@ class Interchange(BaseModel):
     bounds: Bounds
     ramps: list[Ramp]
     refs: list[Relation] = []  # freeway route_master relations that this interchange belongs to
-    wiki_data: WikiData | None = None  # Wikipedia data if available
+    wikis: list[WikiData] = []  # Wikipedia data if available
 
     def list_nodes(self) -> list[Node]:
         """Get all nodes from all ramps in this interchange"""

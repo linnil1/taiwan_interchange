@@ -135,89 +135,93 @@
 		{/if}
 
 		<!-- Wikipedia Data Section -->
-		{#if interchange.wiki_data}
-			<div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded w-full">
-				<h3 class="text-sm font-semibold text-blue-800 mb-2">
-					<a
-						href={interchange.wiki_data.url}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="hover:underline"
-					>
-						{m.wikipedia_data()}
-					</a>
-				</h3>
-
-				<div class="space-y-2 text-xs">
-					{#if interchange.wiki_data.exit_text}
-						<div class="flex">
-							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_exit()}</span>
-							<span class="text-gray-600 flex-1">{interchange.wiki_data.exit_text}</span>
-						</div>
-					{/if}
-
-					{#if interchange.wiki_data.km_distance}
-						<div class="flex">
-							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_distance()}</span>
-							<span class="text-gray-600 flex-1">{interchange.wiki_data.km_distance} km</span>
-						</div>
-					{/if}
-
-					{#if interchange.wiki_data.region}
-						<div class="flex">
-							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_region()}</span>
-							<span class="text-gray-600 flex-1">{interchange.wiki_data.region}</span>
-						</div>
-					{/if}
-
-					{#if interchange.wiki_data.interchange_type && interchange.wiki_data.interchange_type.length > 0}
-						<div class="flex">
-							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_type()}</span>
-							<span class="text-gray-600 flex-1"
-								>{interchange.wiki_data.interchange_type.join(', ')}</span
+		{#if interchange.wikis && interchange.wikis.length > 0}
+			{#each interchange.wikis as wikiData, wikiIndex}
+				<div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded w-full">
+					<h3 class="text-sm font-semibold text-blue-800 mb-2">
+						<a
+							href={wikiData.url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="hover:underline"
+						>
+							{m.wikipedia_data()}
+						</a>
+						{#if wikiData.interchange_url}
+							<span class="text-blue-600"> - </span>
+							<a
+								href={wikiData.interchange_url}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="hover:underline text-blue-600"
 							>
-						</div>
-					{/if}
+								{wikiData.name}
+							</a>
+						{/if}
+					</h3>
 
-					{#if interchange.wiki_data.opening_date && interchange.wiki_data.opening_date.length > 0}
-						<div class="flex">
-							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_opened()}</span>
-							<span class="text-gray-600 flex-1"
-								>{interchange.wiki_data.opening_date.join(', ')}</span
-							>
-						</div>
-					{/if}
+					<div class="space-y-2 text-xs">
+						{#if wikiData.exit_text}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_exit()}</span>
+								<span class="text-gray-600 flex-1">{wikiData.exit_text}</span>
+							</div>
+						{/if}
 
-					{#if interchange.wiki_data.forward_direction && interchange.wiki_data.forward_direction.length > 0}
-						<div class="flex">
-							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_forward()}</span>
-							<span class="text-gray-600 flex-1"
-								>{interchange.wiki_data.forward_direction.join(', ')}</span
-							>
-						</div>
-					{/if}
+						{#if wikiData.km_distance}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_distance()}</span
+								>
+								<span class="text-gray-600 flex-1">{wikiData.km_distance} km</span>
+							</div>
+						{/if}
 
-					{#if interchange.wiki_data.reverse_direction && interchange.wiki_data.reverse_direction.length > 0}
-						<div class="flex">
-							<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_reverse()}</span>
-							<span class="text-gray-600 flex-1"
-								>{interchange.wiki_data.reverse_direction.join(', ')}</span
-							>
-						</div>
-					{/if}
+						{#if wikiData.region}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_region()}</span>
+								<span class="text-gray-600 flex-1">{wikiData.region}</span>
+							</div>
+						{/if}
 
-					{#if interchange.wiki_data.connecting_roads && interchange.wiki_data.connecting_roads.length > 0}
-						<div class="flex">
-							<span class="font-medium text-gray-700 w-16 flex-shrink-0"
-								>{m.wiki_connecting_roads()}</span
-							>
-							<span class="text-gray-600 flex-1"
-								>{interchange.wiki_data.connecting_roads.join(', ')}</span
-							>
-						</div>
-					{/if}
+						{#if wikiData.interchange_type && wikiData.interchange_type.length > 0}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_type()}</span>
+								<span class="text-gray-600 flex-1">{wikiData.interchange_type.join(', ')}</span>
+							</div>
+						{/if}
+
+						{#if wikiData.opening_date && wikiData.opening_date.length > 0}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_opened()}</span>
+								<span class="text-gray-600 flex-1">{wikiData.opening_date.join(', ')}</span>
+							</div>
+						{/if}
+
+						{#if wikiData.forward_direction && wikiData.forward_direction.length > 0}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_forward()}</span>
+								<span class="text-gray-600 flex-1">{wikiData.forward_direction.join(', ')}</span>
+							</div>
+						{/if}
+
+						{#if wikiData.reverse_direction && wikiData.reverse_direction.length > 0}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.wiki_reverse()}</span>
+								<span class="text-gray-600 flex-1">{wikiData.reverse_direction.join(', ')}</span>
+							</div>
+						{/if}
+
+						{#if wikiData.connecting_roads && wikiData.connecting_roads.length > 0}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0"
+									>{m.wiki_connecting_roads()}</span
+								>
+								<span class="text-gray-600 flex-1">{wikiData.connecting_roads.join(', ')}</span>
+							</div>
+						{/if}
+					</div>
 				</div>
-			</div>
+			{/each}
 		{/if}
 
 		<!-- Ramps List -->

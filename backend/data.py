@@ -137,6 +137,12 @@ EXCLUDED_WAY_IDS: set[int] = set()
 # Preserve these freeway endpoint ways even if they fail the connectivity filter
 PRESERVED_ENDPOINT_WAY_IDS: set[int] = {439876652, 439876651}  # 機場端
 
+WIKI_NAME_MAPPING = {
+    "瑞隆路出口匝道": "瑞隆路",
+    "高架道路汐止端": "汐止端",
+    "南深路出口匝道": "南深路",
+}
+
 
 def isolate_interchanges_by_branch(
     interchanges: list[Interchange], isolate_way_ids: set[int]
@@ -881,7 +887,7 @@ def generate_interchanges_json(use_cache: bool = True, add_wiki_data: bool = Tru
         # Map Wikipedia data
         interchanges = map_wiki_to_interchanges(interchanges, wiki_highways)
 
-    json_file_path = save_interchanges(interchanges)
+    json_file_path = save_interchanges(interchanges, save_static=True)
     print(f"Successfully saved interchanges to {json_file_path}")
 
     return True
@@ -896,10 +902,11 @@ def map_wiki_to_interchanges(interchanges: list[Interchange], wiki_highways) -> 
         wiki_highways: List of WikiHighway objects with interchange data
 
     Returns:
-        List of interchanges with wiki_data populated where matches are found
+        List of interchanges with wikis populated where matches are found
     """
     # Create a mapping of interchange names to wiki data
     wiki_name_map: dict[str, WikiData] = {}
+    show_match_log = False
 
     for highway in wiki_highways:
         for wiki_interchange in highway.interchanges:
@@ -910,19 +917,32 @@ def map_wiki_to_interchanges(interchanges: list[Interchange], wiki_highways) -> 
     print(f"Loaded {len(wiki_name_map)} Wikipedia interchange entries")
 
     # Match interchanges to Wikipedia data
-    matched_count = 0
     for interchange in interchanges:
         # Handle multiple names separated by semicolon
         names_to_try = [name.strip().replace("交流道", "") for name in interchange.name.split(";")]
 
-        for name in names_to_try:
-            if name in wiki_name_map:
-                interchange.wiki_data = wiki_name_map[name]
-                matched_count += 1
-                print(f"Matched '{interchange.name}' to Wikipedia data")
-                break
+        if interchange.name in WIKI_NAME_MAPPING:
+            names_to_try.append(WIKI_NAME_MAPPING[interchange.name])
 
+        names_matched = {name for name in names_to_try if name in wiki_name_map}
+        if not names_matched:
+            continue
+        if show_match_log:
+            print(f"Interchange '{interchange.name}' matched to Wikipedia entries: {names_matched}")
+        interchange.wikis = [wiki_name_map[name] for name in names_matched]
+
+    matched_count = sum(1 for ic in interchanges if ic.wikis)
     print(f"Successfully matched {matched_count} interchanges to Wikipedia data")
+
+    # show not match summary
+    if show_match_log:
+        for interchange in interchanges:
+            if not interchange.wikis:
+                print(f"Interchange '{interchange.name}' not matched to any Wikipedia entry")
+        all_matched_wikis = {wiki.name for ic in interchanges for wiki in ic.wikis}
+        for name in sorted(wiki_name_map.keys()):
+            if name not in all_matched_wikis:
+                print(f"Wikipedia entry '{name}' not matched to any interchange")
     return interchanges
 
 
