@@ -50,7 +50,7 @@ class GovInterchangeData(BaseModel):
     )  # Westbound exit preview location (西向出口預告地名)
     notes: list[str] = Field(default_factory=list)  # Other notes/information (其他)
     url: str = ""  # Link to detailed interchange diagram if available
-    facility_type: Literal["interchange", "service_area"] = (
+    facility_type: Literal["interchange", "service_area", "weigh_station"] = (
         "interchange"  # Type based on row color/content
     )
 
@@ -580,6 +580,122 @@ def load_all_gov_interchanges(use_cache: bool = True) -> list[GovHighwayData]:
     return data
 
 
+def read_weigh_stations() -> GovHighwayData:
+    """
+    Read weigh station data from freeway bureau weigh station page.
+
+    Returns:
+        A single GovHighwayData object with parsed weigh station information
+    """
+    url = "https://www.freeway.gov.tw/Publish.aspx?cnid=2057"
+    soup = get_webpage_content(url)
+
+    # Find the main content area
+    content_div = soup.find("div", {"id": "ctl00_CPHolder1_Publisher1_Show3"})
+    if not content_div or not isinstance(content_div, Tag):
+        raise ValueError(f"Could not find content area in weigh station page {url}")
+
+    # Find all tables in the content - assert there's only one
+    tables = content_div.find_all("table")
+    assert len(tables) == 1, f"Expected exactly 1 table, found {len(tables)}"
+
+    table = tables[0]
+    if not isinstance(table, Tag):
+        raise ValueError(f"Table is not a valid Tag in weigh station page {url}")
+
+    # Parse table handling rowspan properly
+    rows = table.find_all("tr")
+    if not rows:
+        raise ValueError(f"Could not find rows in weigh station page {url}")
+
+    # Convert table to matrix handling rowspan
+    tables = []
+
+    for i, row in enumerate(rows):
+        if not isinstance(row, Tag):
+            continue
+
+        cells = row.find_all(["th", "td"])
+        if not cells:
+            continue
+
+        if len(tables) == i:
+            tables.append([])
+
+        for cell in cells:
+            cell_str = cell.get_text(strip=True) if isinstance(cell, Tag) else ""
+            tables[i].append(cell_str)
+            if not isinstance(cell, Tag):
+                continue
+            if cell.has_attr("rowspan"):
+                rowspan_str = cell.attrs["rowspan"]
+                if not rowspan_str or not isinstance(rowspan_str, str):
+                    continue
+                rowspan = int(rowspan_str)
+                for r in range(1, rowspan):
+                    if len(tables) == i + r:
+                        tables.append([])
+                    tables[i + r].append(cell_str)
+
+    # Process the matrix to extract weigh station data
+    tables = [t for t in tables if len(t) == 5]  # Remove empty rows
+
+    header, *rows = tables
+    weigh_stations = {}
+
+    for row_data in rows:
+        highway = row_data[0].strip()
+        station_name = row_data[1].strip() + "地磅站"
+        direction = row_data[2].strip()
+        km_distance = row_data[3].strip()
+        special_weight = row_data[4].strip()
+
+        station = GovInterchangeData(
+            name=station_name,
+            km_distance="",
+            service_area=[],
+            notes=[],
+            facility_type="weigh_station",
+        )
+        if station_name in weigh_stations:
+            station = weigh_stations[station_name]
+
+        station.km_distance += f"{',' if station.km_distance else ''}{km_distance}"
+        station.service_area.append(f"{highway}{direction}{km_distance}")
+
+        if special_weight:
+            station.km_distance += (
+                f"{',' if station.km_distance else ''}{special_weight.split('(')[0]}"
+            )
+            station.service_area.append(f"{highway}{direction}動態地磅{special_weight}")
+        weigh_stations[station_name] = station
+
+    # Create single highway data containing all weigh stations
+    return GovHighwayData(
+        name="地磅站",
+        title="地磅站",
+        url=url,
+        interchanges=list(weigh_stations.values()),
+    )
+
+
+def load_all_gov_weigh_stations(use_cache: bool = True) -> GovHighwayData:
+    """Load all government weigh station data from freeway bureau."""
+    filename = "gov_weigh_stations_cache.json"
+    cache_file_path = os.path.join(os.path.dirname(__file__), filename)
+
+    if os.path.exists(cache_file_path) and use_cache:
+        with open(cache_file_path, encoding="utf-8") as f:
+            data = json.load(f)
+            return GovHighwayData.model_validate(data)
+
+    data = read_weigh_stations()
+    if data:
+        with open(cache_file_path, "w", encoding="utf-8") as f:
+            json.dump(data.model_dump(), f, indent=2, ensure_ascii=False)
+    return data
+
+
 def create_gov_data_from_interchange(
     gov_interchange: GovInterchangeData, highway_url: str
 ) -> GovData:
@@ -600,4 +716,5 @@ def create_gov_data_from_interchange(
 
 
 if __name__ == "__main__":
-    load_all_gov_interchanges(use_cache=False)
+    regular_data = load_all_gov_interchanges(use_cache=True)
+    weigh_station_data = load_all_gov_weigh_stations(use_cache=False)

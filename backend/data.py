@@ -11,6 +11,7 @@ from gov import (
     copy_freeway_pdfs_to_static,
     create_gov_data_from_interchange,
     load_all_gov_interchanges,
+    load_all_gov_weigh_stations,
 )
 from graph_operations import (
     assign_branch_ids,
@@ -906,6 +907,7 @@ def generate_interchanges_json(
 
     if add_gov_data:
         gov_highways = load_all_gov_interchanges(use_cache=use_cache)
+        gov_highways.append(load_all_gov_weigh_stations())
         print(f"Loaded {len(gov_highways)} Government highways with interchange data")
         # Map Government data
         gov_highways = copy_freeway_pdfs_to_static(gov_highways)
