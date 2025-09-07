@@ -36,5 +36,16 @@
 	"wiki_opened": "Opened:",
 	"wiki_forward": "Forward:",
 	"wiki_reverse": "Reverse:",
-	"wiki_connecting_roads": "Connecting Roads:"
+	"wiki_connecting_roads": "Connecting Roads:",
+	"government_data": "Government Data",
+	"freeway_bureau_data": "Taiwan Freeway Bureau",
+	"freeway_bureau_full_name": "Freeway Bureau, Ministry of Transportation and Communications",
+	"gov_distance": "Distance:",
+	"gov_facility_type": "Facility:",
+	"gov_service_area": "Service Area:",
+	"gov_southbound": "Southbound:",
+	"gov_northbound": "Northbound:",
+	"gov_eastbound": "Eastbound:",
+	"gov_westbound": "Westbound:",
+	"gov_notes": "Notes:"
 }

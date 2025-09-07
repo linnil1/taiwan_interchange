@@ -1,6 +1,9 @@
 """Government highway data scraping and parsing utilities."""
 
+import json
+import os
 import re
+import time
 from collections.abc import Sequence
 from typing import Literal
 from urllib.parse import urljoin
@@ -11,6 +14,8 @@ import requests
 import urllib3
 from bs4 import BeautifulSoup, Tag
 from pydantic import BaseModel, Field
+
+from models import GovData
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -75,18 +80,30 @@ def find_tables(soup: BeautifulSoup) -> list[tuple[Tag, str]]:
     tables_with_titles = []
     for i, elem in enumerate(all_elements):
         if isinstance(elem, Tag) and elem.name == "table":
-            # Look backward to find the title (text right before the table)
+            # Special case: if the table has a <caption>, use it as the title first
             title = ""
-            for j in range(i - 1, max(i - 3, -1), -1):
+            caption = elem.find("caption")
+            if caption and isinstance(caption, Tag):
+                cap_text = caption.get_text(strip=True)
+                if cap_text:
+                    title = cap_text
+
+            # Look backward to find the title (text right before the table)
+            for j in range(i - 1, -1, -1):
+                if title:
+                    break
                 prev_elem = all_elements[j]
                 if isinstance(prev_elem, Tag):
+                    if prev_elem.name == "table":
+                        # Stop if we hit another table
+                        break
                     text = prev_elem.get_text(strip=True)
                     if text.strip().startswith("國道"):
                         title = text.strip()
                         break
 
             if not title:
-                print(f"Warning: Could not find title for table at index {i}")
+                print(f"Warning: Could not find title for table at index {elem}")
                 continue
 
             tables_with_titles.append((elem, title))
@@ -340,7 +357,7 @@ def parse_table(table: Tag, title: str, url: str) -> GovHighwayData:
     """Parse a single table and return GovHighwayData."""
     # Extract highway name from title (e.g., "國道2甲" from "國道2甲 - (圳頭－大園)")
     highway_match = re.search(r"國道\d+(?:號[甲乙]?|[甲乙])*", title)
-    highway_name = highway_match.group(0) if highway_match else title.split("-")[0].strip()
+    highway_name = highway_match.group(0) if highway_match else title.strip()
 
     # Get all rows from the table (including thead and tbody)
     rows = table.find_all("tr")
@@ -419,16 +436,52 @@ def read_gov_index_page() -> list[str]:
     return urls
 
 
-if __name__ == "__main__":
-    # Example usage
-    print("Fetching highway page URLs...")
-    # urls = read_gov_index_page()
-    urls = ["https://www.freeway.gov.tw/Publish.aspx?cnid=1906&p=4622"]
-    print(f"Found {len(urls)} highway page URLs")
-
-    from pprint import pprint
-
+def get_all_gov_highway() -> list[GovHighwayData]:
+    """Fetch and parse all highway pages from freeway bureau."""
+    urls = read_gov_index_page()
+    all_data = []
     for url in urls:
         highway_data_list = read_gov_highway_content(url)
-        for highway_data in highway_data_list:
-            pprint(highway_data.model_dump())
+        all_data.extend(highway_data_list)
+        time.sleep(1)  # Be polite and avoid overwhelming the server
+    return all_data
+
+
+def load_all_gov_interchanges(use_cache: bool = True) -> list[GovHighwayData]:
+    """Load all government interchange data from freeway bureau."""
+    filename = "gov_highway_cache.json"
+    cache_file_path = os.path.join(os.path.dirname(__file__), filename)
+
+    if os.path.exists(cache_file_path) and use_cache:
+        with open(cache_file_path, encoding="utf-8") as f:
+            data = json.load(f)
+            return [GovHighwayData.model_validate(i) for i in data]
+
+    data = get_all_gov_highway()
+    if data:
+        with open(cache_file_path, "w", encoding="utf-8") as f:
+            json.dump([item.model_dump() for item in data], f, indent=2, ensure_ascii=False)
+    return data
+
+
+def create_gov_data_from_interchange(
+    gov_interchange: GovInterchangeData, highway_url: str
+) -> GovData:
+    """Transform GovInterchangeData to GovData format."""
+    return GovData(
+        name=gov_interchange.name,
+        km_distance=gov_interchange.km_distance,
+        service_area=gov_interchange.service_area,
+        southbound_exit=gov_interchange.southbound_exit,
+        northbound_exit=gov_interchange.northbound_exit,
+        eastbound_exit=gov_interchange.eastbound_exit,
+        westbound_exit=gov_interchange.westbound_exit,
+        notes=gov_interchange.notes,
+        facility_type=gov_interchange.facility_type,
+        url=highway_url,  # Highway page URL (always present)
+        interchange_url=gov_interchange.url,  # Specific interchange diagram URL (optional)
+    )
+
+
+if __name__ == "__main__":
+    load_all_gov_interchanges(use_cache=False)

@@ -198,6 +198,16 @@
 									></strong
 								> - Structured interchange data from Taiwan highway Wikipedia pages
 							</li>
+							<li>
+								• <strong
+									><a
+										href="https://www.freeway.gov.tw/"
+										target="_blank"
+										rel="noopener"
+										class="text-blue-600 hover:text-blue-800 underline">交通部高速公路局</a
+									></strong
+								> - Official Taiwan freeway bureau data with facility information
+							</li>
 						</ul>
 						<p class="text-gray-700 mb-3">
 							Since the data is not synchronized in real-time, there might be discrepancies when
@@ -205,7 +215,7 @@
 						</p>
 						<p class="text-gray-600 text-sm mb-3">
 							此專案資料來源有 OSM（開放街圖）、OVERPASS（查詢 OSM 資料的
-							API）、Wikipedia（維基百科台灣高速公路交流道文字資料）。因為資料並非即時連動的，所以有可能你反查時會怪怪的，請見諒。
+							API）、Wikipedia（維基百科台灣高速公路交流道文字資料）、交通部高速公路局（官方高速公路交流道與設施資料）。因為資料並非即時連動的，所以有可能你反查時會怪怪的，請見諒。
 						</p>
 						<p class="text-gray-700 mb-2">
 							Last updated: <span
@@ -709,6 +719,55 @@
 							>
 								<strong>創用CC 姓名標示-相同方式分享 3.0 (CC BY-SA 3.0)</strong>
 							</a> 授權。我們感謝維基百科貢獻者維護詳細的公路基礎設施資訊。
+						</p>
+					</div>
+
+					<div>
+						<h3 class="text-lg font-medium text-gray-700 mb-3 flex items-center gap-2">
+							<Map class="w-5 h-5 text-red-600" />
+							Government Data / 政府資料
+						</h3>
+						<p class="text-gray-700 mb-3">
+							Highway interchange data from Taiwan's Freeway Bureau, Ministry of Transportation and
+							Communications is available under the
+							<a
+								href="https://www.freeway.gov.tw/Publish.aspx?cnid=1660"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-blue-600 hover:text-blue-800 underline font-medium"
+							>
+								<strong>Government Website Open Data Declaration (政府網站資料開放宣告)</strong>
+							</a>. We acknowledge the
+							<a
+								href="https://www.freeway.gov.tw/"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-blue-600 hover:text-blue-800 underline font-medium"
+							>
+								<strong
+									>Freeway Bureau, Ministry of Transportation and Communications (交通部高速公路局)</strong
+								>
+							</a> for providing comprehensive official interchange and facility data.
+						</p>
+						<p class="text-gray-600 text-sm">
+							來自台灣交通部高速公路局的高速公路交流道資料採用
+							<a
+								href="https://www.freeway.gov.tw/Publish.aspx?cnid=1660"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-blue-600 hover:text-blue-800 underline font-medium"
+							>
+								<strong>政府網站資料開放宣告</strong>
+							</a>
+							授權。我們感謝
+							<a
+								href="https://www.freeway.gov.tw/"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-blue-600 hover:text-blue-800 underline font-medium"
+							>
+								<strong>交通部高速公路局</strong>
+							</a> 提供全面的官方交流道和設施資料。
 						</p>
 					</div>
 

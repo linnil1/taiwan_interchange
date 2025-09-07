@@ -114,6 +114,31 @@ export interface WikiData {
 	interchange_url: string;
 }
 
+export interface GovData {
+	/** Government data interchange name */
+	name: string;
+	/** Distance in kilometers as string */
+	km_distance: string;
+	/** Service area facilities */
+	service_area: string[];
+	/** Southbound exit information */
+	southbound_exit: string[];
+	/** Northbound exit information */
+	northbound_exit: string[];
+	/** Eastbound exit information */
+	eastbound_exit: string[];
+	/** Westbound exit information */
+	westbound_exit: string[];
+	/** Additional notes */
+	notes: string[];
+	/** Type of facility (interchange, service_area, rest_stop, other) */
+	facility_type: string;
+	/** Highway page URL */
+	url: string;
+	/** Specific interchange diagram URL */
+	interchange_url: string;
+}
+
 export interface Interchange {
 	/** Unique identifier for the interchange */
 	id: number;
@@ -127,6 +152,8 @@ export interface Interchange {
 	refs: Relation[];
 	/** Wikipedia data if available */
 	wikis: WikiData[];
+	/** Government data if available */
+	govs: GovData[];
 }
 
 // Utility types for API responses
@@ -208,6 +235,22 @@ export function isWikiData(obj: any): obj is WikiData {
 	);
 }
 
+export function isGovData(obj: any): obj is GovData {
+	return (
+		typeof obj === 'object' &&
+		typeof obj.name === 'string' &&
+		typeof obj.km_distance === 'string' &&
+		Array.isArray(obj.service_area) &&
+		Array.isArray(obj.southbound_exit) &&
+		Array.isArray(obj.northbound_exit) &&
+		Array.isArray(obj.eastbound_exit) &&
+		Array.isArray(obj.westbound_exit) &&
+		Array.isArray(obj.notes) &&
+		typeof obj.facility_type === 'string' &&
+		typeof obj.url === 'string'
+	);
+}
+
 export function isInterchange(obj: any): obj is Interchange {
 	return (
 		typeof obj === 'object' &&
@@ -219,6 +262,8 @@ export function isInterchange(obj: any): obj is Interchange {
 		Array.isArray(obj.refs) &&
 		obj.refs.every(isRelation) &&
 		Array.isArray(obj.wikis) &&
-		obj.wikis.every(isWikiData)
+		obj.wikis.every(isWikiData) &&
+		Array.isArray(obj.govs) &&
+		obj.govs.every(isGovData)
 	);
 }

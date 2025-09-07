@@ -36,5 +36,16 @@
 	"wiki_opened": "通車日：",
 	"wiki_forward": "順樁預告：",
 	"wiki_reverse": "逆樁預告：",
-	"wiki_connecting_roads": "銜接道路："
+	"wiki_connecting_roads": "銜接道路：",
+	"government_data": "政府資料",
+	"freeway_bureau_data": "高公局資料",
+	"freeway_bureau_full_name": "交通部高速公路局",
+	"gov_distance": "里程：",
+	"gov_facility_type": "設施類型：",
+	"gov_service_area": "服務區：",
+	"gov_southbound": "南下：",
+	"gov_northbound": "北上：",
+	"gov_eastbound": "東向：",
+	"gov_westbound": "西向：",
+	"gov_notes": "備註："
 }

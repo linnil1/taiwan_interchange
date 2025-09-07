@@ -1,6 +1,6 @@
 # Taiwan Interchange Explorer
 
-This project provides comprehensive organization and visualization of all Taiwan highway interchanges with detailed ramp-level annotations. The data is processed from OpenStreetMap and offers classification, visualization, and search capabilities through an interactive web interface.
+This project provides comprehensive organization and visualization of all Taiwan highway interchanges with detailed ramp-level annotations. The data is processed from OpenStreetMap, Wikipedia, and Freeway Bureau, Ministry of Transportation and Communications (交通部高速公路局) and offers classification, visualization, and search capabilities through an interactive web interface.
 
 ## Project Architecture (main file)
 
@@ -10,7 +10,8 @@ taiwan-interchange/
 │   ├── data.py             # Main data processing and generation
 │   ├── osm.py              # OpenStreetMap extraction and parsing
 │   ├── wiki.py             # Wikipedia data extraction and parsing
-│   ├── interchanges.json   # Generated interchange data with Wikipedia integration
+│   ├── gov.py              # Government data extraction (Freeway Bureau, Ministry of Transportation and Communications)
+│   ├── interchanges.json   # Generated interchange data with multi-source integration
 │   └── requirements.txt    # Python dependencies
 ├── frontend/               # SvelteKit web application
 │   ├── src/
@@ -27,7 +28,7 @@ taiwan-interchange/
 ```
 
 The system operates with a simple architecture:
-- **Data Processing**: Python backend processes OpenStreetMap and Wikipedia data and generates JSON
+- **Data Processing**: Python backend processes OpenStreetMap, Wikipedia, and Freeway Bureau, Ministry of Transportation and Communications (交通部高速公路局) data and generates JSON
 - **Static Serving**: Both development and production serve data from static assets
 
 ## Development Setup
@@ -102,11 +103,16 @@ The underlying OpenStreetMap data is licensed under the [Open Database License (
 
 Wikipedia content is available under [Creative Commons Attribution-ShareAlike 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
 
+Government highway data from the Freeway Bureau, Ministry of Transportation and Communications (交通部高速公路局) is available under the [Government Website Open Data Declaration](https://www.freeway.gov.tw/Publish.aspx?cnid=1660).
+
 ### Citation
-When using this data or codebase, please cite this project and acknowledge the underlying OpenStreetMap data contributors:
+When using this data or codebase, please cite this project and acknowledge the underlying data contributors:
 
 ```
 Taiwan Interchange Explorer by linnil1
 Source: https://github.com/linnil1/taiwan-interchange
-Data derived from OpenStreetMap contributors and Wikipedia
+Data derived from:
+- OpenStreetMap contributors
+- Wikipedia
+- Freeway Bureau, Ministry of Transportation and Communications (交通部高速公路局)
 ```

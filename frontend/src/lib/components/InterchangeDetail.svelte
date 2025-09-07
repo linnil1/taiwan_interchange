@@ -224,6 +224,104 @@
 			{/each}
 		{/if}
 
+		<!-- Government Data Section -->
+		{#if interchange.govs && interchange.govs.length > 0}
+			{#each interchange.govs as govData, govIndex}
+				{@const isInterchange = govData.facility_type && govData.facility_type.includes('交流道')}
+				{@const borderColor = isInterchange ? 'border-red-200' : 'border-cyan-400'}
+				{@const bgColor = isInterchange ? 'bg-red-50' : 'bg-cyan-50'}
+				{@const textColor = isInterchange ? 'text-red-800' : 'text-cyan-800'}
+				{@const linkColor = isInterchange ? 'text-red-600' : 'text-cyan-600'}
+
+				<div class="mt-3 p-3 {bgColor} border {borderColor} rounded w-full">
+					<h3 class="text-sm font-semibold {textColor} mb-2">
+						<a href={govData.url} target="_blank" rel="noopener noreferrer" class="hover:underline">
+							{m.freeway_bureau_data()} - {govData.name}
+						</a>
+					</h3>
+
+					{#if govData.interchange_url}
+						<div class="mb-2">
+							<img
+								src={govData.interchange_url}
+								alt="{govData.name} diagram"
+								class="max-w-full h-auto rounded border"
+								loading="lazy"
+							/>
+						</div>
+					{/if}
+
+					<div class="space-y-2 text-xs">
+						{#if govData.km_distance}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.gov_distance()}</span>
+								<span class="text-gray-600 flex-1">{govData.km_distance} km</span>
+							</div>
+						{/if}
+
+						{#if govData.facility_type}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0"
+									>{m.gov_facility_type()}</span
+								>
+								<span class="text-gray-600 flex-1">{govData.facility_type}</span>
+							</div>
+						{/if}
+
+						{#if govData.service_area && govData.service_area.length > 0}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0"
+									>{m.gov_service_area()}</span
+								>
+								<span class="text-gray-600 flex-1">{govData.service_area.join(', ')}</span>
+							</div>
+						{/if}
+
+						{#if govData.southbound_exit && govData.southbound_exit.length > 0}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0"
+									>{m.gov_southbound()}</span
+								>
+								<span class="text-gray-600 flex-1">{govData.southbound_exit.join(', ')}</span>
+							</div>
+						{/if}
+
+						{#if govData.northbound_exit && govData.northbound_exit.length > 0}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0"
+									>{m.gov_northbound()}</span
+								>
+								<span class="text-gray-600 flex-1">{govData.northbound_exit.join(', ')}</span>
+							</div>
+						{/if}
+
+						{#if govData.eastbound_exit && govData.eastbound_exit.length > 0}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.gov_eastbound()}</span
+								>
+								<span class="text-gray-600 flex-1">{govData.eastbound_exit.join(', ')}</span>
+							</div>
+						{/if}
+
+						{#if govData.westbound_exit && govData.westbound_exit.length > 0}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.gov_westbound()}</span
+								>
+								<span class="text-gray-600 flex-1">{govData.westbound_exit.join(', ')}</span>
+							</div>
+						{/if}
+
+						{#if govData.notes && govData.notes.length > 0}
+							<div class="flex">
+								<span class="font-medium text-gray-700 w-16 flex-shrink-0">{m.gov_notes()}</span>
+								<span class="text-gray-600 flex-1">{govData.notes.join(', ')}</span>
+							</div>
+						{/if}
+					</div>
+				</div>
+			{/each}
+		{/if}
+
 		<!-- Ramps List -->
 		<div class="mt-8">
 			{#each interchange.ramps as ramp, i}

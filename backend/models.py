@@ -122,6 +122,22 @@ class WikiData(BaseModel):
     interchange_url: str = ""  # Wikipedia URL for interchange-specific page (if exists)
 
 
+class GovData(BaseModel):
+    """Freeway Bureau data for an interchange"""
+
+    name: str
+    km_distance: str
+    service_area: list[str] = []
+    southbound_exit: list[str] = []
+    northbound_exit: list[str] = []
+    eastbound_exit: list[str] = []
+    westbound_exit: list[str] = []
+    notes: list[str] = []
+    facility_type: str = "interchange"  # interchange, service_area, rest_stop, other
+    url: str = ""  # Highway page URL
+    interchange_url: str = ""  # Specific interchange diagram URL
+
+
 class Bounds(BaseModel):
     """Represents geographical bounds"""
 
@@ -139,7 +155,8 @@ class Interchange(BaseModel):
     bounds: Bounds
     ramps: list[Ramp]
     refs: list[Relation] = []  # freeway route_master relations that this interchange belongs to
-    wikis: list[WikiData] = []  # Wikipedia data if available
+    wikis: list[WikiData] = []
+    govs: list[GovData] = []  # Government data if available
 
     def list_nodes(self) -> list[Node]:
         """Get all nodes from all ramps in this interchange"""

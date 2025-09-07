@@ -5,6 +5,11 @@ from itertools import chain
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
 
+from gov import (
+    GovHighwayData,
+    create_gov_data_from_interchange,
+    load_all_gov_interchanges,
+)
 from graph_operations import (
     assign_branch_ids,
     build_dag_edges,
@@ -19,6 +24,7 @@ from graph_operations import (
 from models import (
     Destination,
     DestinationType,
+    GovData,
     Interchange,
     Node,
     Ramp,
@@ -142,6 +148,13 @@ WIKI_NAME_MAPPING = {
     "高架道路汐止端": "汐止端",
     "南深路出口匝道": "南深路",
 }
+
+GOV_NAME_MAPPING = {
+    "高架道路楊梅端": "楊梅端",
+    "高架道路汐止端": "汐止端",
+}
+
+SHOW_MATCH_LOG = False
 
 
 def isolate_interchanges_by_branch(
@@ -730,7 +743,9 @@ def reorder_and_annotate_interchanges_by_node_index(
     return renumber_interchanges(interchanges)
 
 
-def generate_interchanges_json(use_cache: bool = True, add_wiki_data: bool = True) -> bool:
+def generate_interchanges_json(
+    use_cache: bool = True, add_wiki_data: bool = True, add_gov_data: bool = True
+) -> bool:
     """
     The main function:
     Generate interchanges.json from Overpass API data group them by interchange
@@ -887,6 +902,12 @@ def generate_interchanges_json(use_cache: bool = True, add_wiki_data: bool = Tru
         # Map Wikipedia data
         interchanges = map_wiki_to_interchanges(interchanges, wiki_highways)
 
+    if add_gov_data:
+        gov_highways = load_all_gov_interchanges(use_cache=use_cache)
+        print(f"Loaded {len(gov_highways)} Government highways with interchange data")
+        # Map Government data
+        interchanges = map_gov_to_interchanges(interchanges, gov_highways)
+
     json_file_path = save_interchanges(interchanges, save_static=True)
     print(f"Successfully saved interchanges to {json_file_path}")
 
@@ -906,7 +927,6 @@ def map_wiki_to_interchanges(interchanges: list[Interchange], wiki_highways) -> 
     """
     # Create a mapping of interchange names to wiki data
     wiki_name_map: dict[str, WikiData] = {}
-    show_match_log = False
 
     for highway in wiki_highways:
         for wiki_interchange in highway.interchanges:
@@ -927,7 +947,7 @@ def map_wiki_to_interchanges(interchanges: list[Interchange], wiki_highways) -> 
         names_matched = {name for name in names_to_try if name in wiki_name_map}
         if not names_matched:
             continue
-        if show_match_log:
+        if SHOW_MATCH_LOG:
             print(f"Interchange '{interchange.name}' matched to Wikipedia entries: {names_matched}")
         interchange.wikis = [wiki_name_map[name] for name in names_matched]
 
@@ -935,7 +955,7 @@ def map_wiki_to_interchanges(interchanges: list[Interchange], wiki_highways) -> 
     print(f"Successfully matched {matched_count} interchanges to Wikipedia data")
 
     # show not match summary
-    if show_match_log:
+    if SHOW_MATCH_LOG:
         for interchange in interchanges:
             if not interchange.wikis:
                 print(f"Interchange '{interchange.name}' not matched to any Wikipedia entry")
@@ -943,6 +963,77 @@ def map_wiki_to_interchanges(interchanges: list[Interchange], wiki_highways) -> 
         for name in sorted(wiki_name_map.keys()):
             if name not in all_matched_wikis:
                 print(f"Wikipedia entry '{name}' not matched to any interchange")
+    return interchanges
+
+
+def map_gov_to_interchanges(
+    interchanges: list[Interchange], gov_highways: list[GovHighwayData]
+) -> list[Interchange]:
+    """
+    Map Government interchange data to existing interchanges.
+
+    Args:
+        interchanges: List of interchanges to map to Government data
+        gov_highways: List of GovHighwayData objects with interchange data
+
+    Returns:
+        List of interchanges with govs populated where matches are found
+    """
+    # Create a mapping of interchange names to gov data
+    gov_name_map: dict[str, GovData] = {}
+
+    for highway in gov_highways:
+        for gov_interchange_data in highway.interchanges:
+            gov_data = create_gov_data_from_interchange(gov_interchange_data, highway.url)
+
+            # Use name without "交流道" suffix as key for better matching
+            if gov_interchange_data.name in GOV_NAME_MAPPING:
+                gov_name_map[GOV_NAME_MAPPING[gov_interchange_data.name]] = gov_data
+                continue
+            clean_name = gov_interchange_data.name.replace("交流道", "").strip()
+            gov_name_map[clean_name] = gov_data
+
+    print(f"Loaded {len(gov_name_map)} Government interchange entries")
+
+    # Match interchanges to Government data
+    matched_count = 0
+    for interchange in interchanges:
+        # Handle multiple names separated by semicolon
+        names_to_try = [name.strip().replace("交流道", "") for name in interchange.name.split(";")]
+
+        names_matched = {name for name in names_to_try if name in gov_name_map}
+        if not names_matched:
+            continue
+
+        if SHOW_MATCH_LOG:
+            print(f"✅ Matched '{interchange.name}' to Government data: {names_matched}")
+
+        # Add all matched government data
+        interchange.govs = [gov_name_map[name] for name in names_matched]
+
+        matched_count += 1
+
+    print(
+        f"Successfully matched {matched_count}/{len(interchanges)} interchanges to Government data"
+    )
+
+    # show not match summary
+    if SHOW_MATCH_LOG:
+        unmatched_interchanges = [ic for ic in interchanges if not ic.govs]
+        print(f"Unmatched interchanges: {len(unmatched_interchanges)}")
+        for interchange in unmatched_interchanges:
+            print(f"  Interchange '{interchange.name}' not matched to any Government entry")
+
+        all_matched_govs = {gov.name for ic in interchanges for gov in ic.govs}
+        unmatched_govs = [
+            gov_data.name
+            for gov_data in gov_name_map.values()
+            if gov_data.name not in all_matched_govs
+        ]
+        print(f"Unmatched government entries: {len(unmatched_govs)}")
+        for name in unmatched_govs:
+            print(f"  Government entry '{name}' not matched to any interchange")
+
     return interchanges
 
 
