@@ -4,6 +4,7 @@
 	import InterchangeDetail from '$lib/components/InterchangeDetail.svelte';
 	import SearchComponent from '$lib/components/SearchComponent.svelte';
 	import ProjectFooter from '$lib/components/ProjectFooter.svelte';
+	import DraggableImageViewer from '$lib/components/DraggableImageViewer.svelte';
 	import { interchangesStore, fetchInterchanges } from '$lib/stores/interchanges.js';
 	import type { Interchange } from '$lib/types.js';
 	import { onMount } from 'svelte';
@@ -14,6 +15,7 @@
 	let searchTerm: string = $state('');
 	let fitRampIndex: number | null = $state(null);
 	let filteredInterchanges: Interchange[] = $state([]);
+	let selectedImage: { src: string; alt: string } | null = $state(null);
 
 	// Fetch interchanges on mount
 	onMount(fetchInterchanges);
@@ -62,6 +64,7 @@
 			onClose={clearSelection}
 			bind:selectedRampIndex
 			bind:fitRampIndex
+			bind:selectedImage
 		/>
 	{/if}
 
@@ -76,3 +79,8 @@
 		/>
 	</div>
 </div>
+
+<!-- Draggable Image Viewer -->
+{#if selectedImage}
+	<DraggableImageViewer bind:selectedImage />
+{/if}

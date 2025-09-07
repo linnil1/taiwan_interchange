@@ -7,12 +7,14 @@
 		interchange,
 		onClose,
 		selectedRampIndex = $bindable(null),
-		fitRampIndex = $bindable(null)
+		fitRampIndex = $bindable(null),
+		selectedImage = $bindable(null)
 	}: {
 		interchange: Interchange;
 		onClose: () => void;
 		selectedRampIndex?: number | null;
 		fitRampIndex?: number | null;
+		selectedImage?: { src: string; alt: string } | null;
 	} = $props();
 
 	let rampElements: HTMLElement[] = [];
@@ -245,8 +247,21 @@
 							<img
 								src={govData.interchange_url}
 								alt="{govData.name} diagram"
-								class="max-w-full h-auto rounded border"
+								class="max-w-full h-auto rounded border cursor-pointer hover:shadow-lg transition-shadow"
 								loading="lazy"
+								onclick={() =>
+									(selectedImage = {
+										src: govData.interchange_url,
+										alt: `${govData.name} diagram`
+									})}
+								role="button"
+								tabindex="0"
+								onkeydown={(e) =>
+									e.key === 'Enter' &&
+									(selectedImage = {
+										src: govData.interchange_url,
+										alt: `${govData.name} diagram`
+									})}
 							/>
 						</div>
 					{/if}
