@@ -14,6 +14,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from models import WikiData
+from persistence import load_or_fetch_data
 
 # Constants
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -172,15 +173,7 @@ def query_wikipedia_interchanges(url: str) -> WikiHighway:
     return data
 
 
-def save_wiki_cache(data: WikiHighway, cache_file_path: str) -> bool:
-    """Save Wikipedia interchange data to a cache file (JSON)."""
-    with open(cache_file_path, "w", encoding="utf-8") as f:
-        json.dump(data.model_dump(), f, indent=2, ensure_ascii=False)
-    print(f"Saved Wikipedia data to cache: {cache_file_path}")
-    return True
-
-
-def load_or_fetch_wiki(cache_filename: str, url: str, use_cache: bool = True) -> WikiHighway:
+def load_or_fetch_wiki_data(cache_filename: str, url: str, use_cache: bool = True) -> WikiHighway:
     """
     Load cached Wikipedia interchange data or fetch and cache it.
 
@@ -189,17 +182,10 @@ def load_or_fetch_wiki(cache_filename: str, url: str, use_cache: bool = True) ->
         url: Wikipedia URL to fetch
         use_cache: Whether to use cache
     """
-    cache_file_path = os.path.join(os.path.dirname(__file__), cache_filename)
-
-    if os.path.exists(cache_file_path) and use_cache:
-        with open(cache_file_path, encoding="utf-8") as f:
-            data = json.load(f)
-            return WikiHighway.model_validate(data)
-
-    data = query_wikipedia_interchanges(url)
-    if data:
-        save_wiki_cache(data, cache_file_path)
-    return data
+    data = load_or_fetch_data(
+        cache_filename, lambda: query_wikipedia_interchanges(url).model_dump(), use_cache
+    )
+    return WikiHighway.model_validate(data)
 
 
 def load_all_wiki_interchanges(use_cache: bool = True) -> list[WikiHighway]:
@@ -208,8 +194,8 @@ def load_all_wiki_interchanges(use_cache: bool = True) -> list[WikiHighway]:
 
     for url in WIKI_URLS:
         name = url.split("/")[-1]
-        cache_filename = f"wiki_highway_cache_{name}.json"
-        data = load_or_fetch_wiki(cache_filename, url, use_cache=use_cache)
+        cache_filename = f"wiki_cache_interchanges_{name}.json"
+        data = load_or_fetch_wiki_data(cache_filename, url, use_cache)
         all_data.append(data)
 
     return all_data

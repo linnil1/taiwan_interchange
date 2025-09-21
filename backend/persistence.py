@@ -2,8 +2,12 @@
 
 import json
 import os
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from models import Interchange
+
+T = TypeVar("T")
 
 
 def load_interchanges() -> list[Interchange]:
@@ -37,3 +41,30 @@ def save_interchanges(interchanges: list[Interchange], save_static: bool = True)
         print(f"Saved to frontend static: {frontend_static_path}")
 
     return backend_json_file_path
+
+
+def load_or_fetch_data(filename: str, fetch_func: Callable[[], Any], use_cache: bool = True) -> Any:
+    """
+    Generic function to load data from cache or fetch from source.
+
+    Args:
+        filename: Cache file path
+        fetch_func: Function to fetch data if cache doesn't exist
+        use_cache: Whether to use cache
+
+    Returns:
+        The loaded or fetched data (as returned by json.load)
+    """
+    filename = os.path.join(os.path.dirname(__file__), filename)
+    if use_cache and os.path.exists(filename):
+        with open(filename, encoding="utf-8") as f:
+            return json.load(f)
+
+    # Fetch data and save to cache
+    data = fetch_func()
+    if use_cache:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    return data

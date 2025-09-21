@@ -10,8 +10,8 @@ from gov import (
     GovHighwayData,
     copy_freeway_pdfs_to_static,
     create_gov_data_from_interchange,
-    load_all_gov_interchanges,
-    load_all_gov_weigh_stations,
+    load_or_fetch_gov_interchanges,
+    load_or_fetch_gov_weigh_stations,
 )
 from graph_operations import (
     assign_branch_ids,
@@ -39,13 +39,12 @@ from models import (
 from osm import (
     OverPassRelation,
     OverPassResponse,
-    load_adjacent_road_relations,
-    load_elevated_freeway_relation,
-    load_freeway_routes,
-    load_nearby_weigh_stations,
-    load_overpass,
-    load_provincial_routes,
-    load_unknown_end_nodes,
+    load_or_fetch_osm_adjacent_roads,
+    load_or_fetch_osm_elevated_freeway,
+    load_or_fetch_osm_freeway_routes,
+    load_or_fetch_osm_motorway_links,
+    load_or_fetch_osm_provincial_routes,
+    load_or_fetch_osm_weigh_stations,
 )
 from osm_operations import (
     display_for_master,
@@ -74,7 +73,6 @@ from relation_operations import (
     wrap_adj_road_relation,
     wrap_junction_name_relation,
     wrap_relation_to_node_relation,
-    wrap_ways_as_node_relation,
     wrap_ways_as_relation,
 )
 from utils import (
@@ -287,41 +285,6 @@ def annotate_ramps_by_propagating(ramps: list[Ramp]) -> list[Ramp]:
                     ramp.destination.append(d)
                     existing.add(key)
 
-    return ramps
-
-
-def annotate_ramps_by_query_unknown(
-    ramps: list[Ramp], interchange_name: str, use_cache: bool = True
-) -> list[Ramp]:
-    """Annotate ramps by querying unknown end nodes for ramps with empty destinations."""
-    # Find ramps with empty destinations and collect their end node IDs
-    empty_destination_ramps = []
-    unknown_node_ids = []
-
-    for ramp in ramps:
-        if not ramp.destination:
-            empty_destination_ramps.append(ramp)
-            # Get the end node of connected ramps
-            if not ramp.to_ramps:
-                _, end_node = ramp.get_endpoint_nodes()
-                unknown_node_ids.append(end_node.id)
-
-    if not unknown_node_ids:
-        return ramps
-
-    # Query for unknown end nodes
-    response = load_unknown_end_nodes(unknown_node_ids, interchange_name, use_cache)
-
-    node_to_relation = wrap_ways_as_node_relation(response.list_ways(), road_type=RoadType.WAY)
-    for ramp in ramps:
-        relations = extract_ramp_name_by_end_node_relation(ramp, node_to_relation)
-        if not relations:
-            continue
-        # Unknown end node implies exiting freeway
-        for rel in relations:
-            dest = Destination.from_relation(rel, DestinationType.EXIT)
-            ramp.destination.append(dest)
-        ramp.destination = list(set(ramp.destination))
     return ramps
 
 
@@ -567,9 +530,6 @@ def annotate_interchange_ramps(
         for ramp in interchange.ramps
     ]
 
-    # Then use query unknown for ramps with empty destinations
-    # ramps = annotate_ramps_by_query_unknown(ramps, interchange.name, use_cache)
-
     # Finally, propagate destinations upstream from exit ramps to entry ramps
     ramps = annotate_ramps_by_propagating(ramps)
 
@@ -754,7 +714,7 @@ def generate_interchanges_json(
     Generate interchanges.json from Overpass API data group them by interchange
     """
     print("Getting Overpass data...")
-    response = load_overpass(use_cache)
+    response = load_or_fetch_osm_motorway_links(use_cache)
     ways = response.list_ways()
     ways = filter_accessible_ways(ways, EXCLUDED_WAY_IDS)
     nodes = response.list_nodes()
@@ -765,7 +725,7 @@ def generate_interchanges_json(
         return False
 
     # Also include the very first/last non-motorway_link ways at freeway endpoints
-    freeway_resp = load_freeway_routes(use_cache)
+    freeway_resp = load_or_fetch_osm_freeway_routes(use_cache)
     freeway_ways = extract_freeway_related_ways(freeway_resp)
     freeway_paths = process_paths_from_ways(
         freeway_ways, excluded_ids=None, duplicate_two_way=False
@@ -775,7 +735,7 @@ def generate_interchanges_json(
     # We'll filter right before concatenation when motorway_link paths are available
 
     # Also include branch ways from elevated freeway (not part of long connected components)
-    elev_resp = load_elevated_freeway_relation(use_cache)
+    elev_resp = load_or_fetch_osm_elevated_freeway(use_cache)
     elevated_wrapped = wrap_elevated_relation_as_route_master(elev_resp)
     elevated_ways = extract_freeway_related_ways(elevated_wrapped)
     elevated_paths = process_paths_from_ways(
@@ -824,7 +784,7 @@ def generate_interchanges_json(
 
     # Load weigh stations for naming fallback
     # Build a global mapping: way_id -> weigh-station relation
-    ws_response = load_nearby_weigh_stations(use_cache)
+    ws_response = load_or_fetch_osm_weigh_stations(use_cache)
     weigh_stations = filter_weight_stations(ws_response)
     print(f"Loaded {len(weigh_stations)} weigh stations")
     weigh_way_rel = build_weigh_way_relations(ways, weigh_stations)
@@ -848,7 +808,7 @@ def generate_interchanges_json(
     interchanges = merge_interchanges_by_name(interchanges)
     print(f"After merge: {len(interchanges)} interchanges")
 
-    provincial_resp = load_provincial_routes(use_cache)
+    provincial_resp = load_or_fetch_osm_provincial_routes(use_cache)
     provincial_node_rel = build_exit_relation(provincial_resp, RoadType.PROVINCIAL)
     print(f"Prepared {len(provincial_node_rel)} provincial node relations")
 
@@ -862,7 +822,7 @@ def generate_interchanges_json(
     print(f"Prepared {len(weigh_way_rel)} weigh-station relations (way-based)")
 
     # Build adjacent road relations for end-node annotation (used before generic way relation)
-    adj_resp = load_adjacent_road_relations(use_cache)
+    adj_resp = load_or_fetch_osm_adjacent_roads(use_cache)
     endnode_adjacent_relations = wrap_adj_road_relation(adj_resp)
     print(f"Prepared {len(endnode_adjacent_relations)} adjacent route=road relations (node-based)")
     interchanges = [
@@ -906,8 +866,8 @@ def generate_interchanges_json(
         interchanges = map_wiki_to_interchanges(interchanges, wiki_highways)
 
     if add_gov_data:
-        gov_highways = load_all_gov_interchanges(use_cache=use_cache)
-        gov_highways.append(load_all_gov_weigh_stations())
+        gov_highways = load_or_fetch_gov_interchanges(use_cache=use_cache)
+        gov_highways.append(load_or_fetch_gov_weigh_stations(use_cache=use_cache))
         print(f"Loaded {len(gov_highways)} Government highways with interchange data")
         # Map Government data
         gov_highways = copy_freeway_pdfs_to_static(gov_highways)

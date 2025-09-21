@@ -127,7 +127,7 @@ def normalize_weigh_station_name(station_name: str) -> str:
 def filter_weight_stations(response: OverPassResponse) -> list[OverPassWay]:
     """Return weigh station ways that have a name and geometry.
 
-    The input is the OverPassResponse from load_nearby_weigh_stations.
+    The input is the OverPassResponse from load_weigh_stations.
     """
     ways = response.list_ways()
     return [w for w in ways if (w.tags or {}).get("name") and getattr(w, "geometry", None)]

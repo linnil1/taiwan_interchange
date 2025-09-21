@@ -1,6 +1,5 @@
 """Government highway data scraping and parsing utilities."""
 
-import json
 import os
 import re
 import shutil
@@ -18,6 +17,7 @@ from bs4 import BeautifulSoup, Tag
 from pydantic import BaseModel, Field
 
 from models import GovData
+from persistence import load_or_fetch_data
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -169,7 +169,7 @@ def copy_freeway_pdfs_to_static(gov_highways: list[GovHighwayData]) -> list[GovH
     return gov_highways
 
 
-def get_webpage_content(url: str) -> BeautifulSoup:
+def fetch_website(url: str) -> BeautifulSoup:
     """Fetch webpage content and return BeautifulSoup object."""
     response = requests.get(url, timeout=30, verify=False)
     response.raise_for_status()
@@ -462,7 +462,7 @@ def parse_table_interchanges(table: Tag, headers: list[str]) -> list[GovIntercha
     return interchanges
 
 
-def parse_table(table: Tag, title: str, url: str) -> GovHighwayData:
+def parse_table_to_highway_data(table: Tag, title: str, url: str) -> GovHighwayData:
     """Parse a single table and return GovHighwayData."""
     # Extract highway name from title (e.g., "國道2甲" from "國道2甲 - (圳頭－大園)")
     highway_match = re.search(r"國道\d+(?:號[甲乙]?|[甲乙])*", title)
@@ -489,7 +489,7 @@ def parse_table(table: Tag, title: str, url: str) -> GovHighwayData:
     return GovHighwayData(name=highway_name, title=title, url=url, interchanges=interchanges)
 
 
-def read_gov_highway_content(url: str) -> list[GovHighwayData]:
+def query_gov_highways(url: str) -> list[GovHighwayData]:
     """
     Read and parse a freeway bureau highway page content into List of GovHighwayData structures.
 
@@ -499,7 +499,7 @@ def read_gov_highway_content(url: str) -> list[GovHighwayData]:
     Returns:
         List of GovHighwayData objects with parsed interchange information
     """
-    soup = get_webpage_content(url)
+    soup = fetch_website(url)
     tables_with_titles = find_tables(soup)
 
     if not tables_with_titles:
@@ -507,13 +507,13 @@ def read_gov_highway_content(url: str) -> list[GovHighwayData]:
 
     highway_data_list = []
     for table, title in tables_with_titles:
-        highway_data = parse_table(table, title, url)
+        highway_data = parse_table_to_highway_data(table, title, url)
         highway_data_list.append(highway_data)
 
     return highway_data_list
 
 
-def read_gov_index_page() -> list[str]:
+def query_links_from_index_page() -> list[str]:
     """
     Read the index page and return list of highway page URLs.
 
@@ -522,8 +522,7 @@ def read_gov_index_page() -> list[str]:
     """
     index_url = "https://www.freeway.gov.tw/Publish.aspx?cnid=1906"
 
-    soup = get_webpage_content(index_url)
-    highway_urls = []
+    soup = fetch_website(index_url)
 
     # Look for highway links in the content
     content_area = soup.find("div", {"class": "FCK"}) or soup.find("div", {"class": "FCKdetail"})
@@ -545,12 +544,12 @@ def read_gov_index_page() -> list[str]:
     return urls
 
 
-def get_all_gov_highway() -> list[GovHighwayData]:
+def query_all_gov_highways() -> list[GovHighwayData]:
     """Fetch and parse all highway pages from freeway bureau."""
-    urls = read_gov_index_page()
+    urls = query_links_from_index_page()
     all_data = []
     for url in urls:
-        highway_data_list = read_gov_highway_content(url)
+        highway_data_list = query_gov_highways(url)
 
         # Process each highway data to find and convert PDFs
         for highway_data in highway_data_list:
@@ -563,24 +562,17 @@ def get_all_gov_highway() -> list[GovHighwayData]:
     return all_data
 
 
-def load_all_gov_interchanges(use_cache: bool = True) -> list[GovHighwayData]:
+def load_or_fetch_gov_interchanges(use_cache: bool = True) -> list[GovHighwayData]:
     """Load all government interchange data from freeway bureau."""
-    filename = "gov_highway_cache.json"
-    cache_file_path = os.path.join(os.path.dirname(__file__), filename)
-
-    if os.path.exists(cache_file_path) and use_cache:
-        with open(cache_file_path, encoding="utf-8") as f:
-            data = json.load(f)
-            return [GovHighwayData.model_validate(i) for i in data]
-
-    data = get_all_gov_highway()
-    if data:
-        with open(cache_file_path, "w", encoding="utf-8") as f:
-            json.dump([item.model_dump() for item in data], f, indent=2, ensure_ascii=False)
-    return data
+    data = load_or_fetch_data(
+        "gov_cache_interchanges.json",
+        lambda: [highway.model_dump() for highway in query_all_gov_highways()],
+        use_cache,
+    )
+    return [GovHighwayData.model_validate(item) for item in data]
 
 
-def read_weigh_stations() -> GovHighwayData:
+def query_gov_weigh_stations() -> GovHighwayData:
     """
     Read weigh station data from freeway bureau weigh station page.
 
@@ -588,7 +580,7 @@ def read_weigh_stations() -> GovHighwayData:
         A single GovHighwayData object with parsed weigh station information
     """
     url = "https://www.freeway.gov.tw/Publish.aspx?cnid=2057"
-    soup = get_webpage_content(url)
+    soup = fetch_website(url)
 
     # Find the main content area
     content_div = soup.find("div", {"id": "ctl00_CPHolder1_Publisher1_Show3"})
@@ -679,21 +671,12 @@ def read_weigh_stations() -> GovHighwayData:
     )
 
 
-def load_all_gov_weigh_stations(use_cache: bool = True) -> GovHighwayData:
+def load_or_fetch_gov_weigh_stations(use_cache: bool = True) -> GovHighwayData:
     """Load all government weigh station data from freeway bureau."""
-    filename = "gov_weigh_stations_cache.json"
-    cache_file_path = os.path.join(os.path.dirname(__file__), filename)
-
-    if os.path.exists(cache_file_path) and use_cache:
-        with open(cache_file_path, encoding="utf-8") as f:
-            data = json.load(f)
-            return GovHighwayData.model_validate(data)
-
-    data = read_weigh_stations()
-    if data:
-        with open(cache_file_path, "w", encoding="utf-8") as f:
-            json.dump(data.model_dump(), f, indent=2, ensure_ascii=False)
-    return data
+    data = load_or_fetch_data(
+        "gov_cache_weigh_stations.json", lambda: query_gov_weigh_stations().model_dump(), use_cache
+    )
+    return GovHighwayData.model_validate(data)
 
 
 def create_gov_data_from_interchange(
@@ -716,5 +699,5 @@ def create_gov_data_from_interchange(
 
 
 if __name__ == "__main__":
-    regular_data = load_all_gov_interchanges(use_cache=True)
-    weigh_station_data = load_all_gov_weigh_stations(use_cache=False)
+    regular_data = load_or_fetch_gov_interchanges(use_cache=True)
+    weigh_station_data = load_or_fetch_gov_weigh_stations(use_cache=False)

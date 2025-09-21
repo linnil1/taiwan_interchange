@@ -1,11 +1,9 @@
-import json
-import os
-from collections.abc import Callable
-from functools import partial
 from typing import Literal
 
 import requests
 from pydantic import BaseModel, Field
+
+from persistence import load_or_fetch_data
 
 
 class Coordinate(BaseModel):
@@ -76,7 +74,7 @@ class OverPassResponse(BaseModel):
         return [element for element in self.elements if element.type == "relation"]  # type: ignore
 
 
-def query_overpass_api() -> dict | None:
+def query_motorway_links() -> dict | None:
     """Query Overpass API for motorway links and junction nodes in Taiwan."""
     overpass_url = "http://overpass-api.de/api/interpreter"
 
@@ -135,29 +133,7 @@ def query_provincial_routes() -> dict | None:
     return response.json()
 
 
-def query_unknown_end_nodes(node_ids: list[int]) -> dict | None:
-    """Query Overpass API for the given nodes and their connected ways (bn)."""
-    overpass_url = "http://overpass-api.de/api/interpreter"
-
-    # Convert node IDs to comma-separated string
-    node_ids_str = ",".join(str(node_id) for node_id in node_ids)
-
-    query = f"""
-    [out:json][timeout:60];
-    area["name:en"="Taiwan"]->.taiwan;
-    (
-      node(id:{node_ids_str})(area.taiwan);
-      way(bn)(area.taiwan);
-    );
-    out body;
-    """
-
-    response = requests.post(overpass_url, data={"data": query})
-    response.raise_for_status()
-    return response.json()
-
-
-def query_nearby_weigh_stations() -> dict | None:
+def query_weigh_stations() -> dict | None:
     """Query Overpass API for weigh stations with names ending in '地磅站' in Taiwan."""
     overpass_url = "http://overpass-api.de/api/interpreter"
 
@@ -175,74 +151,39 @@ def query_nearby_weigh_stations() -> dict | None:
     return response.json()
 
 
-def save_overpass_cache(data: dict, cache_file_path: str) -> bool:
-    """Save Overpass API response to a cache file (JSON)."""
-    with open(cache_file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"Saved Overpass data to cache: {cache_file_path}")
-    return True
-
-
-def load_or_fetch_overpass(
-    cache_filename: str,
-    fetch_func: Callable[[], dict | None],
-    use_cache: bool = True,
-) -> OverPassResponse:
-    """
-    Load a cached Overpass response or fetch and cache it using `fetch_func`.
-
-    Args:
-        cache_filename: Name of the cache file (without path)
-        fetch_func: Function to call if cache miss or use_cache=False (should take no arguments)
-        use_cache: Whether to use cache
-    """
-    cache_file_path = os.path.join(os.path.dirname(__file__), cache_filename)
-
-    if os.path.exists(cache_file_path) and use_cache:
-        with open(cache_file_path, encoding="utf-8") as f:
-            data = json.load(f)
-            return OverPassResponse.model_validate(data)
-
-    data = fetch_func()
-    assert data, "No data returned from Overpass API"
-    save_overpass_cache(data, cache_file_path)
+def load_or_fetch_osm_freeway_routes(use_cache: bool = True) -> OverPassResponse:
+    """Load freeway route relations from cache or Overpass API."""
+    data = load_or_fetch_data(
+        "osm_cache_freeway.json", lambda: query_freeway_routes() or {}, use_cache
+    )
     return OverPassResponse.model_validate(data)
 
 
-def load_freeway_routes(use_cache: bool = True) -> OverPassResponse:
-    """Load freeway route relations from cache or Overpass API."""
-    return load_or_fetch_overpass("freeway_cache.json", query_freeway_routes, use_cache=use_cache)
-
-
-def load_provincial_routes(use_cache: bool = True) -> OverPassResponse:
+def load_or_fetch_osm_provincial_routes(use_cache: bool = True) -> OverPassResponse:
     """Load provincial route relations from cache or Overpass API."""
-    return load_or_fetch_overpass(
-        "provincial_cache.json", query_provincial_routes, use_cache=use_cache
+    data = load_or_fetch_data(
+        "osm_cache_provincial.json", lambda: query_provincial_routes() or {}, use_cache
     )
+    return OverPassResponse.model_validate(data)
 
 
-def load_unknown_end_nodes(
-    node_ids: list[int], interchange_name: str, use_cache: bool = True
-) -> OverPassResponse:
-    """Load selected nodes and their connected ways from cache or Overpass API."""
-    cache_filename = f"unknown_cache_{interchange_name.replace(' ', '_')}.json"
-    fetch_func = partial(query_unknown_end_nodes, node_ids)
-    return load_or_fetch_overpass(cache_filename, fetch_func, use_cache=use_cache)
-
-
-def load_nearby_weigh_stations(use_cache: bool = True) -> OverPassResponse:
+def load_or_fetch_osm_weigh_stations(use_cache: bool = True) -> OverPassResponse:
     """Load weigh stations in Taiwan from cache or Overpass API."""
-    return load_or_fetch_overpass(
-        "weigh_stations_cache.json", query_nearby_weigh_stations, use_cache=use_cache
+    data = load_or_fetch_data(
+        "osm_cache_weigh_stations.json", lambda: query_weigh_stations() or {}, use_cache
     )
+    return OverPassResponse.model_validate(data)
 
 
-def load_overpass(use_cache: bool = True) -> OverPassResponse:
+def load_or_fetch_osm_motorway_links(use_cache: bool = True) -> OverPassResponse:
     """Load motorway_link/junction Overpass response from cache or Overpass API."""
-    return load_or_fetch_overpass("overpass_cache.json", query_overpass_api, use_cache=use_cache)
+    data = load_or_fetch_data(
+        "osm_cache_motorway_links.json", lambda: query_motorway_links() or {}, use_cache
+    )
+    return OverPassResponse.model_validate(data)
 
 
-def query_adjacent_road_relations() -> dict | None:
+def query_adjacent_roads() -> dict | None:
     """Query Overpass API for route=road relations adjacent to motorway_link nodes in Taiwan.
 
     This focuses on ways connected to motorway_link nodes (excluding the links themselves),
@@ -267,15 +208,16 @@ def query_adjacent_road_relations() -> dict | None:
     return response.json()
 
 
-def load_adjacent_road_relations(use_cache: bool = True) -> OverPassResponse:
+def load_or_fetch_osm_adjacent_roads(use_cache: bool = True) -> OverPassResponse:
     """Load adjacent route=road relations from cache or Overpass API."""
-    return load_or_fetch_overpass(
-        "adjacent_road_relations_cache.json", query_adjacent_road_relations, use_cache=use_cache
+    data = load_or_fetch_data(
+        "osm_cache_adjacent_roads.json", lambda: query_adjacent_roads() or {}, use_cache
     )
+    return OverPassResponse.model_validate(data)
 
 
 # --- Special elevated freeway relation: 汐止-楊梅高架 (relation id: 9282022) ---
-def query_elevated_freeway_relation() -> dict | None:
+def query_elevated_freeway() -> dict | None:
     """Query Overpass API for the special elevated freeway relation (id: 9282022)."""
     overpass_url = "http://overpass-api.de/api/interpreter"
 
@@ -294,8 +236,9 @@ def query_elevated_freeway_relation() -> dict | None:
     return response.json()
 
 
-def load_elevated_freeway_relation(use_cache: bool = True) -> OverPassResponse:
+def load_or_fetch_osm_elevated_freeway(use_cache: bool = True) -> OverPassResponse:
     """Load the special elevated freeway relation (id: 9282022) from cache or Overpass API."""
-    return load_or_fetch_overpass(
-        "elevated_freeway_cache.json", query_elevated_freeway_relation, use_cache=use_cache
+    data = load_or_fetch_data(
+        "osm_cache_elevated_freeway.json", lambda: query_elevated_freeway() or {}, use_cache
     )
+    return OverPassResponse.model_validate(data)
