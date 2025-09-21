@@ -19,6 +19,7 @@
 		Sparkles
 	} from 'lucide-svelte';
 	import * as m from '$lib/paraglide/messages';
+	import { resolve } from '$app/paths';
 </script>
 
 <svelte:head>
@@ -30,7 +31,7 @@
 		<!-- Floating Back Buton -->
 		<div class="fixed bottom-6 left-6 z-50">
 			<button
-				onclick={() => goto('/')}
+				onclick={() => goto(resolve('/'))}
 				class="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center shadow-lg"
 			>
 				{m.back_to_explorer()}

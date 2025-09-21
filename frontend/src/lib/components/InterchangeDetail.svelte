@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { X, ZoomIn } from 'lucide-svelte';
-	import type { Interchange } from '$lib/types.js';
+	import type { Interchange, Ramp, Destination } from '$lib/types.js';
 	import * as m from '$lib/paraglide/messages';
 
 	let {
@@ -41,27 +41,27 @@
 	}
 
 	// Helper function to get ramp connections within this interchange
-	function getRampConnections(ramp: any) {
+	function getRampConnections(ramp: Ramp) {
 		const fromRamps = ramp.from_ramps
 			.map((id: number) => interchange.ramps.find((r) => r.id === id))
-			.filter((r: any) => r !== undefined);
+			.filter((r: Ramp | undefined): r is Ramp => r !== undefined);
 
 		const toRamps = ramp.to_ramps
 			.map((id: number) => interchange.ramps.find((r) => r.id === id))
-			.filter((r: any) => r !== undefined);
+			.filter((r: Ramp | undefined): r is Ramp => r !== undefined);
 
 		return { fromRamps, toRamps };
 	}
 
 	// Helper function to format ramp display name - just show #number
-	function getRampDisplayName(ramp: any) {
+	function getRampDisplayName(ramp: Ramp) {
 		return `#${ramp.id}`;
 	}
 
 	// Helper function to format ramp display name for navigation - show destinations + #number
-	function getRampNavigationDisplayName(ramp: any) {
+	function getRampNavigationDisplayName(ramp: Ramp) {
 		if (ramp.destination && ramp.destination.length > 0) {
-			const destinationNames = ramp.destination.map((d: any) => d.name).join(', ');
+			const destinationNames = ramp.destination.map((d: Destination) => d.name).join(', ');
 			return `${destinationNames} #${ramp.id}`;
 		}
 		return `#${ramp.id}`;
@@ -118,7 +118,7 @@
 			<div class="mt-2">
 				<div class="text-xs text-gray-500 mb-1">{m.connected_to()}</div>
 				<div class="flex flex-wrap gap-1">
-					{#each interchange.refs as ref}
+					{#each interchange.refs as ref (ref.id)}
 						<span
 							class="inline-flex items-center rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 border border-blue-200"
 						>
@@ -138,7 +138,8 @@
 
 		<!-- Wikipedia Data Section -->
 		{#if interchange.wikis && interchange.wikis.length > 0}
-			{#each interchange.wikis as wikiData, wikiIndex}
+			<!-- eslint-disable svelte/no-navigation-without-resolve -->
+			{#each interchange.wikis as wikiData (wikiData.url)}
 				<div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded w-full">
 					<h3 class="text-sm font-semibold text-blue-800 mb-2">
 						<a
@@ -224,45 +225,48 @@
 					</div>
 				</div>
 			{/each}
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/if}
 
 		<!-- Government Data Section -->
 		{#if interchange.govs && interchange.govs.length > 0}
-			{#each interchange.govs as govData, govIndex}
+			<!-- eslint-disable svelte/no-navigation-without-resolve -->
+			{#each interchange.govs as govData (govData.url)}
 				{@const isInterchange = govData.facility_type && govData.facility_type.includes('交流道')}
 				{@const borderColor = isInterchange ? 'border-red-200' : 'border-cyan-400'}
 				{@const bgColor = isInterchange ? 'bg-red-50' : 'bg-cyan-50'}
 				{@const textColor = isInterchange ? 'text-red-800' : 'text-cyan-800'}
-				{@const linkColor = isInterchange ? 'text-red-600' : 'text-cyan-600'}
 
 				<div class="mt-3 p-3 {bgColor} border {borderColor} rounded w-full">
 					<h3 class="text-sm font-semibold {textColor} mb-2">
-						<a href={govData.url} target="_blank" rel="noopener noreferrer" class="hover:underline">
+						<a
+							href={govData.url}
+							target="_blank"
+							rel="external noopener noreferrer"
+							class="hover:underline"
+						>
 							{m.freeway_bureau_data()} - {govData.name}
 						</a>
 					</h3>
 
 					{#if govData.interchange_url}
 						<div class="mb-2">
-							<img
-								src={govData.interchange_url}
-								alt="{govData.name} diagram"
-								class="max-w-full h-auto rounded border cursor-pointer hover:shadow-lg transition-shadow"
-								loading="lazy"
+							<button
+								type="button"
+								class="block w-full"
 								onclick={() =>
 									(selectedImage = {
 										src: govData.interchange_url,
 										alt: `${govData.name} diagram`
 									})}
-								role="button"
-								tabindex="0"
-								onkeydown={(e) =>
-									e.key === 'Enter' &&
-									(selectedImage = {
-										src: govData.interchange_url,
-										alt: `${govData.name} diagram`
-									})}
-							/>
+							>
+								<img
+									src={govData.interchange_url}
+									alt="{govData.name} diagram"
+									class="max-w-full h-auto rounded border cursor-pointer hover:shadow-lg transition-shadow"
+									loading="lazy"
+								/>
+							</button>
 						</div>
 					{/if}
 
@@ -335,11 +339,12 @@
 					</div>
 				</div>
 			{/each}
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/if}
 
 		<!-- Ramps List -->
 		<div class="mt-8">
-			{#each interchange.ramps as ramp, i}
+			{#each interchange.ramps as ramp, i (ramp.id)}
 				<div
 					bind:this={rampElements[i]}
 					role="button"
@@ -387,8 +392,9 @@
 					</div>
 					<!-- Destination information directly below ramp title - each destination on its own row, centered -->
 					{#if ramp.destination && ramp.destination.length > 0}
+						<!-- eslint-disable svelte/no-navigation-without-resolve -->
 						<div class="text-sm text-gray-600 mb-2 text-center">
-							{#each ramp.destination as d, di}
+							{#each ramp.destination as d (d.id)}
 								<div class="flex items-center justify-center mb-1">
 									<span
 										class="px-1.5 py-0.5 rounded border text-[10px] mr-2 {d.destination_type ===
@@ -412,13 +418,14 @@
 					{:else}
 						<div class="text-sm text-gray-600 mb-2 text-center font-bold">{m.unknown()}</div>
 					{/if}
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 					<!-- Ramp Navigation -->
 					{#if getRampConnections(ramp).fromRamps.length > 0 || getRampConnections(ramp).toRamps.length > 0}
 						{@const connections = getRampConnections(ramp)}
 						<div class="mb-2 text-xs grid grid-cols-2 gap-2 mt-3 mx-2">
 							<!-- Previous ramps (left column) -->
 							<div class="flex flex-col gap-1">
-								{#each connections.fromRamps as fromRamp}
+								{#each connections.fromRamps as fromRamp (fromRamp.id)}
 									<button
 										type="button"
 										class="w-full px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors text-center leading-tight flex items-center justify-center"
@@ -433,7 +440,7 @@
 							</div>
 							<!-- Next ramps (right column) -->
 							<div class="flex flex-col gap-1">
-								{#each connections.toRamps as toRamp}
+								{#each connections.toRamps as toRamp (toRamp.id)}
 									<button
 										type="button"
 										class="w-full px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-center leading-tight flex items-center justify-center"
@@ -451,7 +458,7 @@
 
 					<!-- Paths within ramp -->
 					<div class="ml-2 mt-6">
-						{#each ramp.paths as path, j}
+						{#each ramp.paths as path, j (`${path.id}-${path.part}`)}
 							<div class="mb-2 p-2 bg-gray-50 rounded text-xs">
 								<div class="flex items-center justify-between mb-1">
 									<div class="font-medium text-gray-700">
@@ -480,7 +487,7 @@
 									<div
 										class="max-h-16 overflow-y-auto text-xs leading-tight flex-1 flex flex-wrap items-start"
 									>
-										{#each path.nodes as node, k}
+										{#each path.nodes as node, k (node.id)}
 											<a
 												href="https://www.openstreetmap.org/node/{node.id}"
 												target="_blank"

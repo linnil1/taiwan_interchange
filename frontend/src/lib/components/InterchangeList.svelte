@@ -39,7 +39,7 @@
 	{#if interchanges.length === 0}
 		<div class="p-5 text-center text-gray-600">Loading interchanges...</div>
 	{:else}
-		{#each interchanges as interchange}
+		{#each interchanges as interchange (interchange.id)}
 			<div
 				class="p-3 border-b border-gray-200 cursor-pointer transition-colors duration-200 flex justify-between items-center hover:bg-gray-50 {selectedInterchange &&
 				selectedInterchange.id === interchange.id
@@ -55,7 +55,7 @@
 					<div class="font-medium text-gray-800 truncate">#{interchange.id} {interchange.name}</div>
 					{#if interchange.refs && interchange.refs.length}
 						<div class="mt-1 flex flex-wrap gap-1">
-							{#each interchange.refs as ref}
+							{#each interchange.refs as ref (ref.name)}
 								<span
 									class="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 border border-gray-200"
 								>

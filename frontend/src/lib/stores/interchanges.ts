@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { Interchange, InterchangeList } from '$lib/types.js';
+import type { InterchangeList } from '$lib/types.js';
 import { isInterchange } from '$lib/types.js';
 
 export const interchangesStore = writable<InterchangeList>([]);
@@ -18,7 +18,7 @@ export async function fetchInterchanges(): Promise<InterchangeList> {
 		// Validate data structure using type guards
 		if (Array.isArray(data)) {
 			// Validate each interchange
-			const validatedData: InterchangeList = data.filter((item: any) => {
+			const validatedData: InterchangeList = data.filter((item: unknown) => {
 				if (!isInterchange(item)) {
 					console.warn('Invalid interchange data:', item);
 					return false;

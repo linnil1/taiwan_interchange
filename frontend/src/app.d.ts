@@ -8,6 +8,7 @@ declare global {
 			ctx: ExecutionContext;
 		}
 
+		// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 		interface Env {
 			// Add environment variables here if needed
 		}

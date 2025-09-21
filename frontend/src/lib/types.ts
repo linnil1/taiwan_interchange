@@ -160,110 +160,120 @@ export interface Interchange {
 export type InterchangeList = Interchange[];
 
 // Type guards for runtime type checking
-export function isNode(obj: any): obj is Node {
+export function isNode(obj: unknown): obj is Node {
 	return (
 		typeof obj === 'object' &&
-		typeof obj.lat === 'number' &&
-		typeof obj.lng === 'number' &&
-		typeof obj.id === 'number'
+		obj !== null &&
+		typeof (obj as Node).lat === 'number' &&
+		typeof (obj as Node).lng === 'number' &&
+		typeof (obj as Node).id === 'number'
 	);
 }
 
-export function isPath(obj: any): obj is Path {
+export function isPath(obj: unknown): obj is Path {
 	return (
 		typeof obj === 'object' &&
-		typeof obj.id === 'number' &&
-		typeof obj.part === 'number' &&
-		Array.isArray(obj.nodes) &&
-		obj.nodes.every(isNode)
+		obj !== null &&
+		typeof (obj as Path).id === 'number' &&
+		typeof (obj as Path).part === 'number' &&
+		Array.isArray((obj as Path).nodes) &&
+		(obj as Path).nodes.every(isNode)
 	);
 }
 
-export function isRamp(obj: any): obj is Ramp {
+export function isRamp(obj: unknown): obj is Ramp {
 	return (
 		typeof obj === 'object' &&
-		typeof obj.id === 'number' &&
-		Array.isArray(obj.destination) &&
-		obj.destination.every(
-			(d: any) =>
-				typeof d?.id === 'number' &&
-				typeof d?.name === 'string' &&
-				typeof d?.destination_type === 'string' &&
-				typeof d?.road_type === 'string' &&
-				typeof d?.relation_type === 'string'
+		obj !== null &&
+		typeof (obj as Ramp).id === 'number' &&
+		Array.isArray((obj as Ramp).destination) &&
+		(obj as Ramp).destination.every(
+			(d: unknown) =>
+				typeof d === 'object' &&
+				d !== null &&
+				typeof (d as Destination).id === 'number' &&
+				typeof (d as Destination).name === 'string' &&
+				typeof (d as Destination).destination_type === 'string' &&
+				typeof (d as Destination).road_type === 'string' &&
+				typeof (d as Destination).relation_type === 'string'
 		) &&
-		Array.isArray(obj.from_ramps) &&
-		Array.isArray(obj.to_ramps) &&
-		Array.isArray(obj.paths) &&
-		obj.paths.every(isPath)
+		Array.isArray((obj as Ramp).from_ramps) &&
+		Array.isArray((obj as Ramp).to_ramps) &&
+		Array.isArray((obj as Ramp).paths) &&
+		(obj as Ramp).paths.every(isPath)
 	);
 }
 
-export function isBounds(obj: any): obj is Bounds {
+export function isBounds(obj: unknown): obj is Bounds {
 	return (
 		typeof obj === 'object' &&
-		typeof obj.min_lat === 'number' &&
-		typeof obj.max_lat === 'number' &&
-		typeof obj.min_lng === 'number' &&
-		typeof obj.max_lng === 'number'
+		obj !== null &&
+		typeof (obj as Bounds).min_lat === 'number' &&
+		typeof (obj as Bounds).max_lat === 'number' &&
+		typeof (obj as Bounds).min_lng === 'number' &&
+		typeof (obj as Bounds).max_lng === 'number'
 	);
 }
 
-export function isRelation(obj: any): obj is Relation {
+export function isRelation(obj: unknown): obj is Relation {
 	return (
 		typeof obj === 'object' &&
-		typeof obj.id === 'number' &&
-		typeof obj.name === 'string' &&
-		typeof obj.road_type === 'string' &&
-		typeof obj.relation_type === 'string'
+		obj !== null &&
+		typeof (obj as Relation).id === 'number' &&
+		typeof (obj as Relation).name === 'string' &&
+		typeof (obj as Relation).road_type === 'string' &&
+		typeof (obj as Relation).relation_type === 'string'
 	);
 }
 
-export function isWikiData(obj: any): obj is WikiData {
+export function isWikiData(obj: unknown): obj is WikiData {
 	return (
 		typeof obj === 'object' &&
-		typeof obj.name === 'string' &&
-		typeof obj.exit_text === 'string' &&
-		typeof obj.km_distance === 'string' &&
-		typeof obj.region === 'string' &&
-		Array.isArray(obj.forward_direction) &&
-		Array.isArray(obj.reverse_direction) &&
-		Array.isArray(obj.interchange_type) &&
-		Array.isArray(obj.opening_date) &&
-		Array.isArray(obj.connecting_roads) &&
-		typeof obj.url === 'string'
+		obj !== null &&
+		typeof (obj as WikiData).name === 'string' &&
+		typeof (obj as WikiData).exit_text === 'string' &&
+		typeof (obj as WikiData).km_distance === 'string' &&
+		typeof (obj as WikiData).region === 'string' &&
+		Array.isArray((obj as WikiData).forward_direction) &&
+		Array.isArray((obj as WikiData).reverse_direction) &&
+		Array.isArray((obj as WikiData).interchange_type) &&
+		Array.isArray((obj as WikiData).opening_date) &&
+		Array.isArray((obj as WikiData).connecting_roads) &&
+		typeof (obj as WikiData).url === 'string'
 	);
 }
 
-export function isGovData(obj: any): obj is GovData {
+export function isGovData(obj: unknown): obj is GovData {
 	return (
 		typeof obj === 'object' &&
-		typeof obj.name === 'string' &&
-		typeof obj.km_distance === 'string' &&
-		Array.isArray(obj.service_area) &&
-		Array.isArray(obj.southbound_exit) &&
-		Array.isArray(obj.northbound_exit) &&
-		Array.isArray(obj.eastbound_exit) &&
-		Array.isArray(obj.westbound_exit) &&
-		Array.isArray(obj.notes) &&
-		typeof obj.facility_type === 'string' &&
-		typeof obj.url === 'string'
+		obj !== null &&
+		typeof (obj as GovData).name === 'string' &&
+		typeof (obj as GovData).km_distance === 'string' &&
+		Array.isArray((obj as GovData).service_area) &&
+		Array.isArray((obj as GovData).southbound_exit) &&
+		Array.isArray((obj as GovData).northbound_exit) &&
+		Array.isArray((obj as GovData).eastbound_exit) &&
+		Array.isArray((obj as GovData).westbound_exit) &&
+		Array.isArray((obj as GovData).notes) &&
+		typeof (obj as GovData).facility_type === 'string' &&
+		typeof (obj as GovData).url === 'string'
 	);
 }
 
-export function isInterchange(obj: any): obj is Interchange {
+export function isInterchange(obj: unknown): obj is Interchange {
 	return (
 		typeof obj === 'object' &&
-		typeof obj.id === 'number' &&
-		typeof obj.name === 'string' &&
-		isBounds(obj.bounds) &&
-		Array.isArray(obj.ramps) &&
-		obj.ramps.every(isRamp) &&
-		Array.isArray(obj.refs) &&
-		obj.refs.every(isRelation) &&
-		Array.isArray(obj.wikis) &&
-		obj.wikis.every(isWikiData) &&
-		Array.isArray(obj.govs) &&
-		obj.govs.every(isGovData)
+		obj !== null &&
+		typeof (obj as Interchange).id === 'number' &&
+		typeof (obj as Interchange).name === 'string' &&
+		isBounds((obj as Interchange).bounds) &&
+		Array.isArray((obj as Interchange).ramps) &&
+		(obj as Interchange).ramps.every(isRamp) &&
+		Array.isArray((obj as Interchange).refs) &&
+		(obj as Interchange).refs.every(isRelation) &&
+		Array.isArray((obj as Interchange).wikis) &&
+		(obj as Interchange).wikis.every(isWikiData) &&
+		Array.isArray((obj as Interchange).govs) &&
+		(obj as Interchange).govs.every(isGovData)
 	);
 }

@@ -21,7 +21,9 @@
 	// Get unique refs from all interchanges
 	let availableRefs = $derived(
 		Array.from(
-			new Set(interchanges.flatMap((interchange) => interchange.refs.map((ref) => ref.name)))
+			new Set(
+				interchanges.flatMap((interchange: Interchange) => interchange.refs.map((ref) => ref.name))
+			)
 		).sort()
 	);
 
@@ -125,7 +127,7 @@
 					class="flex-1 w-full rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
 				>
 					<option value="all">{m.all_routes()}</option>
-					{#each availableRefs as ref}
+					{#each availableRefs as ref (ref)}
 						<option value={ref}>{ref}</option>
 					{/each}
 				</select>

@@ -22,7 +22,7 @@
 	let mapContainer: HTMLDivElement;
 	let allMarkers: Marker[] = [];
 	let selectedPaths: Polyline[] = [];
-	let L: any; // Leaflet will be loaded dynamically
+	let L: typeof import('leaflet') | null = null; // Leaflet will be loaded dynamically
 
 	onMount(() => {
 		if (browser && mapContainer) {
