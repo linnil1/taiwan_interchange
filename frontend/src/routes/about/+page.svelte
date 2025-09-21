@@ -220,10 +220,10 @@
 						<p class="text-gray-700 mb-2">
 							Last updated: <span
 								class="bg-yellow-200 text-yellow-800 px-2 py-1 rounded text-sm font-semibold"
-								>August 31, 2025</span
+								>September 21, 2025</span
 							>
 						</p>
-						<p class="text-gray-600 text-sm">資料最後更新時間: 2025年8月31日</p>
+						<p class="text-gray-600 text-sm">資料最後更新時間: 2025年9月21日</p>
 					</div>
 
 					<div>
@@ -380,14 +380,14 @@
 							<div class="flex items-start">
 								<span class="text-gray-700 mr-2">•</span>
 								<div class="text-gray-700">
-									Handle ramp connection issues including cloverleaf interchange loops; some ramps
-									are not one-way
+									Handle ramp connection issues, including cloverleaf interchange loops; some ramps
+									are not consistently tagged as one-way
 								</div>
 							</div>
 							<div class="flex items-start">
 								<span class="text-gray-700 mr-2">•</span>
 								<div class="text-gray-700">
-									處理匝道連接問題，包含處理苜蓿葉交流道的循環問題；有些匝道並非 one-way
+									處理匝道連接問題，包含苜蓿葉型交流道中的環路問題；而且有些匝道並未被標註為單向
 								</div>
 							</div>
 
@@ -400,6 +400,49 @@
 							<div class="flex items-start">
 								<span class="text-gray-700 mr-2">•</span>
 								<div class="text-gray-700">建立匝道與國道的連結並以此排序</div>
+							</div>
+							<div class="flex items-start">
+								<span class="text-gray-700 mr-2">•</span>
+								<div class="text-gray-700">
+									Integrate Wikipedia interchange data (parse structured pages to enrich junction
+									names, descriptions, and listings)
+								</div>
+							</div>
+							<div class="flex items-start">
+								<span class="text-gray-700 mr-2">•</span>
+								<div class="text-gray-700">
+									結合維基百科交流道資料（解析結構化頁面以補強交流道名稱、描述與列表）
+								</div>
+							</div>
+
+							<div class="flex items-start">
+								<span class="text-gray-700 mr-2">•</span>
+								<div class="text-gray-700">
+									Integrate Freeway Bureau textual and facility data (metadata, facility lists) to
+									enrich junction information with official descriptions and attributes
+								</div>
+							</div>
+							<div class="flex items-start">
+								<span class="text-gray-700 mr-2">•</span>
+								<div class="text-gray-700">
+									整合交通部高速公路局的文字與設施資料，以官方描述與屬性補強交流道資訊
+								</div>
+							</div>
+
+							<div class="flex items-start">
+								<span class="text-gray-700 mr-2">•</span>
+								<div class="text-gray-700">
+									Support official interchange sketch images: convert provided PDFs to web-friendly
+									images or tiles and display them with an interactive viewer (pan/zoom, overlay
+									layers, toggle annotations)
+								</div>
+							</div>
+							<div class="flex items-start">
+								<span class="text-gray-700 mr-2">•</span>
+								<div class="text-gray-700">
+									支援官方交流道示意圖：若為 PDF
+									先轉成網頁友好圖片或切片，並在網站上顯示，提供互動檢視（平移/縮放、圖層疊加、開關標註）
+								</div>
 							</div>
 						</div>
 					</div>
