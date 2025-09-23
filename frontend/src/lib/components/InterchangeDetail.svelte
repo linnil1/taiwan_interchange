@@ -139,7 +139,7 @@
 		<!-- Wikipedia Data Section -->
 		{#if interchange.wikis && interchange.wikis.length > 0}
 			<!-- eslint-disable svelte/no-navigation-without-resolve -->
-			{#each interchange.wikis as wikiData (wikiData.url)}
+			{#each interchange.wikis as wikiData (wikiData.name)}
 				<div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded w-full">
 					<h3 class="text-sm font-semibold text-blue-800 mb-2">
 						<a
@@ -231,7 +231,7 @@
 		<!-- Government Data Section -->
 		{#if interchange.govs && interchange.govs.length > 0}
 			<!-- eslint-disable svelte/no-navigation-without-resolve -->
-			{#each interchange.govs as govData (govData.url)}
+			{#each interchange.govs as govData (govData.name)}
 				{@const isInterchange = govData.facility_type && govData.facility_type.includes('交流道')}
 				{@const borderColor = isInterchange ? 'border-red-200' : 'border-cyan-400'}
 				{@const bgColor = isInterchange ? 'bg-red-50' : 'bg-cyan-50'}

@@ -547,13 +547,15 @@
 									href="https://github.com/linnil1"
 									target="_blank"
 									rel="noopener"
-									class="text-blue-600 hover:text-blue-800 text-sm underline">GitHub</a
+									class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs hover:bg-blue-200"
+									>GitHub</a
 								>
 								<a
 									href="https://linnil1.tw"
 									target="_blank"
 									rel="noopener"
-									class="text-blue-600 hover:text-blue-800 text-sm underline">Profile</a
+									class="bg-gray-200 text-gray-800 px-2 py-1 rounded text-xs hover:bg-gray-400"
+									>Profile</a
 								>
 							</div>
 						</div>
@@ -573,12 +575,12 @@
 						<div class="flex-1">
 							<h3 class="text-lg font-medium text-gray-800">
 								<a
-									href="https://github.com/linnil1/interchange"
+									href="https://github.com/linnil1/taiwan_interchange"
 									target="_blank"
 									rel="noopener"
 									class="text-blue-600 hover:text-blue-800"
 								>
-									linnil1 / interchange
+									linnil1 / taiwan_interchange
 								</a>
 							</h3>
 							<p class="text-gray-600 text-sm mb-2">Taiwan Highway Interchange Explorer</p>
