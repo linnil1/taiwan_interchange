@@ -62,7 +62,7 @@ from path_operations import (
     filter_accessible_ways,
     process_paths_from_ways,
 )
-from persistence import save_interchanges
+from persistence import load_interchanges, save_interchanges
 from relation_operations import (
     NodeRelationMap,
     WayRelationMap,
@@ -108,7 +108,7 @@ DELETE_INTERCHANGE_WAY_IDS: set[int] = {
 # Explicit interchange name overrides when an interchange contains a way ID
 WAY_TO_INTERCHANGE_NAME: dict[int, str] = {
     247148858: "西螺交流道;西螺服務區",
-    136861416: "高工局",
+    # 136861416: "高工局",
     260755985: "田寮地磅站",
     328852477: "環北交流道",
     50893495: "環北交流道",
@@ -126,6 +126,13 @@ WAY_TO_INTERCHANGE_NAME: dict[int, str] = {
     1174712096: "羅東交流道",
     552542934: "高架道路汐止端",
     202808793: "校前路交流道;楊梅休息站;楊梅端",
+    1149403167: "五股交流道;泰山轉接道",
+    136861414: "五股交流道;泰山轉接道",
+}
+
+# TODO: maybe change most above to use this instead
+NODE_TO_INTERCHANGE_NAME: dict[int, str] = {
+    1501451270: "高速公路局",
 }
 
 # Ignore specific nodes when extracting names (these should not name interchanges)
@@ -235,7 +242,7 @@ def delete_interchanges_containing_ways(
 
 
 def override_interchange_names_by_way(
-    interchanges: list[Interchange], mapping: dict[int, str] = WAY_TO_INTERCHANGE_NAME
+    interchanges: list[Interchange], mapping: dict[int, str]
 ) -> list[Interchange]:
     """
     Override interchange names if they contain any specific way IDs defined in `mapping`.
@@ -501,6 +508,7 @@ def annotate_interchange_name(
 
     combined = sorted(set(n for n in list(names) + list(weigh_names) if n))
     if combined:
+        # print(f"Rename {interchange.name} to " + ";".join(combined))
         interchange.name = ";".join(combined)
     return interchange
 
@@ -706,6 +714,20 @@ def reorder_and_annotate_interchanges_by_node_index(
     return renumber_interchanges(interchanges)
 
 
+def add_manual_junction_names(node_dict: dict[int, str]) -> NodeRelationMap:
+    """Add manual motorway_junction names for specific nodes not present in OSM data."""
+
+    junction_node_rel: dict[int, Relation] = {}
+    for id, name in node_dict.items():
+        junction_node_rel[id] = Relation(
+            id=id,
+            name=name,
+            road_type=RoadType.JUNCTION,
+            relation_type=RelationType.RELATION,
+        )
+    return junction_node_rel
+
+
 def generate_interchanges_json(
     use_cache: bool = True, add_wiki_data: bool = True, add_gov_data: bool = True
 ) -> bool:
@@ -713,60 +735,57 @@ def generate_interchanges_json(
     The main function:
     Generate interchanges.json from Overpass API data group them by interchange
     """
+    # Basic
     print("Getting Overpass data...")
     response = load_or_fetch_osm_motorway_links(use_cache)
     ways = response.list_ways()
     ways = filter_accessible_ways(ways, EXCLUDED_WAY_IDS)
     nodes = response.list_nodes()
     print(f"Loaded {len(ways)} motorway_link ways and {len(nodes)} motorway junction nodes")
-
     if not ways or not nodes:
         print("No motorway links/nodes found in Taiwan")
         return False
 
-    # Also include the very first/last non-motorway_link ways at freeway endpoints
-    freeway_resp = load_or_fetch_osm_freeway_routes(use_cache)
-    freeway_ways = extract_freeway_related_ways(freeway_resp)
-    freeway_paths = process_paths_from_ways(
-        freeway_ways, excluded_ids=None, duplicate_two_way=False
-    )
-    freeway_endpoints = extract_endpoint_ways(freeway_paths)
-    print(f"Found {len(freeway_endpoints)} freeway endpoint ways (pre-filter)")
-    # We'll filter right before concatenation when motorway_link paths are available
+    # Process paths from motorway_link ways
+    node_dict = {node.id: node for node in nodes}
+    paths = process_paths_from_ways(ways, excluded_ids=None, duplicate_two_way=True)
+    print(f"Processed {len(paths)} paths")
 
-    # Also include branch ways from elevated freeway (not part of long connected components)
+    # Add elevated freeway's branch (not part of long connected components), and endpoints
     elev_resp = load_or_fetch_osm_elevated_freeway(use_cache)
     elevated_wrapped = wrap_elevated_relation_as_route_master(elev_resp)
     elevated_ways = extract_freeway_related_ways(elevated_wrapped)
+    print(f"Extracted {len(elevated_ways)} elevated freeway-related ways")
     elevated_paths = process_paths_from_ways(
         elevated_ways, excluded_ids=None, duplicate_two_way=False
     )
     elevated_branches = extract_branch_ways(elevated_paths)
     elevated_endpoints = extract_endpoint_ways(elevated_paths)
-    elevated_branches = concat_paths(elevated_branches, elevated_endpoints)
-    print(f"Found {len(elevated_branches)} elevated branch ways")
+    elevated_all_paths = concat_paths(elevated_branches, elevated_endpoints)
+    print(f"Found {len(elevated_all_paths)} elevated branch and endpoint ways")
 
-    print("Processing paths and ramps...")
-    # Create dictionaries / mappings for efficient lookup
-    node_dict = {node.id: node for node in nodes}
-    way_to_relations = wrap_ways_as_relation(ways, road_type=RoadType.WAY)
-    junction_node_rel = wrap_junction_name_relation(node_dict, IGNORED_NODE_IDS)
-    paths = process_paths_from_ways(ways, excluded_ids=None, duplicate_two_way=True)
-    print(f"Processed {len(paths)} paths")
-
-    # Filter freeway endpoints by motorway_link connectivity and then concatenate
+    # Add freeway endpoints
+    freeway_resp = load_or_fetch_osm_freeway_routes(use_cache)
+    freeway_ways = extract_freeway_related_ways(freeway_resp)
+    print(f"Extracted {len(freeway_ways)} freeway-related ways")
+    freeway_paths = process_paths_from_ways(
+        freeway_ways, excluded_ids=None, duplicate_two_way=False
+    )
+    freeway_endpoints = extract_endpoint_ways(freeway_paths)
     freeway_endpoints = filter_endpoints_by_motorway_link(freeway_endpoints, paths)
+    print(f"Added {len(freeway_endpoints)} freeway endpoint ways")
     paths = concat_paths(paths, freeway_endpoints)
 
-    # Add elevated branch ways to paths
-    if elevated_branches:
-        paths = concat_paths(paths, elevated_branches)
-        print(f"Added {len(elevated_branches)} elevated branch ways to paths")
+    # Add elevated paths
+    if elevated_all_paths:
+        paths = concat_paths(paths, elevated_all_paths)
+        print(f"Added {len(elevated_all_paths)} elevated paths")
 
     # Manually add preserved endpoint ways after the first concat
     preserved_paths = [p for p in freeway_paths if p.id in PRESERVED_ENDPOINT_WAY_IDS]
     if preserved_paths:
         paths = concat_paths(paths, preserved_paths)
+    print(f"Total paths after adding endpoints: {len(paths)}")
 
     # Group paths into ramps
     paths = break_paths_by_endpoints(paths)
@@ -777,54 +796,59 @@ def generate_interchanges_json(
     ramps = assign_branch_ids(ramps)
     print(f"Grouped into {len(ramps)} ramps")
 
-    # Group ramps into interchanges
+    # 1. Group ramps into interchanges
     interchanges = group_ramps_to_interchange(ramps, 0.005)
     print(f"Identified {len(interchanges)} interchanges")
+
+    # 2. Force Split interchange
     interchanges = isolate_interchanges_by_branch(interchanges, SPECIAL_ISOLATE_BRANCH_WAY_IDS)
 
-    # Load weigh stations for naming fallback
-    # Build a global mapping: way_id -> weigh-station relation
+    # 3. Annotate interchange names
     ws_response = load_or_fetch_osm_weigh_stations(use_cache)
     weigh_stations = filter_weight_stations(ws_response)
     print(f"Loaded {len(weigh_stations)} weigh stations")
     weigh_way_rel = build_weigh_way_relations(ways, weigh_stations)
-
-    # Build junction relation mapping once and use for naming
-    # Apply manual tuning for specific interchanges (require annotate name first)
+    junction_node_rel = wrap_junction_name_relation(node_dict, IGNORED_NODE_IDS)
+    junction_node_rel.update(add_manual_junction_names(NODE_TO_INTERCHANGE_NAME))
     interchanges = [
         annotate_interchange_name(interchange, junction_node_rel, weigh_way_rel)
         for interchange in interchanges
     ]
-    # Split first, then merge
+    # 4. Split interchanges by (;)
     interchanges = split_interchanges_by_name_marker(interchanges, distance_threshold=0.001)
-    interchanges = override_interchange_names_by_way(interchanges, WAY_TO_INTERCHANGE_NAME)
-    interchanges = merge_interchanges_by_name(interchanges)
 
-    # Annotate interchange again, and annotate ramp
-    interchanges = [
-        annotate_interchange_name(interchange, junction_node_rel, weigh_way_rel)
-        for interchange in interchanges
-    ]
+    # 5. Force rename
+    interchanges = override_interchange_names_by_way(interchanges, WAY_TO_INTERCHANGE_NAME)
+
+    # 6. Merge interchanges by name
     interchanges = merge_interchanges_by_name(interchanges)
     print(f"After merge: {len(interchanges)} interchanges")
 
+    # 7. Annotate interchange again
+    interchanges = [
+        annotate_interchange_name(interchange, junction_node_rel, weigh_way_rel)
+        for interchange in interchanges
+    ]
+    interchanges = merge_interchanges_by_name(interchanges)
+
+    # 8. Force Remove interchanges
+    interchanges = delete_interchanges_containing_ways(interchanges, DELETE_INTERCHANGE_WAY_IDS)
+    print(f"Final: {len(interchanges)} interchanges")
+
+    # 9. Annotate ramp
+    # by freeway/provincial, adjacent road, junction name relation, weigh-station way relation
     provincial_resp = load_or_fetch_osm_provincial_routes(use_cache)
     provincial_node_rel = build_exit_relation(provincial_resp, RoadType.PROVINCIAL)
     print(f"Prepared {len(provincial_node_rel)} provincial node relations")
-
-    # freeway_resp already loaded above
     freeway_node_rel = build_exit_relation(freeway_resp, RoadType.FREEWAY)
     print(
         f"Prepared {len(freeway_node_rel)} freeway and {len(provincial_node_rel)} provincial node relations"
     )
-
-    # We already have weigh_way_rel for all ways
     print(f"Prepared {len(weigh_way_rel)} weigh-station relations (way-based)")
-
-    # Build adjacent road relations for end-node annotation (used before generic way relation)
     adj_resp = load_or_fetch_osm_adjacent_roads(use_cache)
     endnode_adjacent_relations = wrap_adj_road_relation(adj_resp)
     print(f"Prepared {len(endnode_adjacent_relations)} adjacent route=road relations (node-based)")
+    way_to_relations = wrap_ways_as_relation(ways, road_type=RoadType.WAY)
     interchanges = [
         annotate_interchange_ramps(
             interchange,
@@ -840,31 +864,28 @@ def generate_interchanges_json(
     ]
     print(f"Annotated {len(interchanges)} interchanges")
 
+    # Debug: print duplicate names
     names = [ic.name for ic in interchanges]
     counter = Counter(names)
     for name, count in counter.items():
         if count > 1 or ";" in name:
             print(f"Special Interchange '{name}' count: {count}")
 
-    interchanges = delete_interchanges_containing_ways(interchanges, DELETE_INTERCHANGE_WAY_IDS)
-    print(f"After filtering: {len(interchanges)} interchanges")
-
-    # Build master indices separately for freeway and elevated, then merge (freeway takes precedence)
+    # 10. Reorder and annotate by freeway master index (freeway takes precedence over elevated)
     node_index = build_master_order_index(freeway_resp)
     elevated_index = build_master_order_index(elevated_wrapped)
     elevated_index.update(node_index)  # freeway index takes precedence
     node_index = elevated_index
-
     interchanges = reorder_and_annotate_interchanges_by_node_index(interchanges, node_index)
 
-    # Print first few interchanges as sample
-    # pprint(interchanges[:3])
+    # wiki
     if add_wiki_data:
         wiki_highways = load_all_wiki_interchanges(use_cache=use_cache)
         print(f"Loaded {len(wiki_highways)} Wikipedia highways with interchange data")
         # Map Wikipedia data
         interchanges = map_wiki_to_interchanges(interchanges, wiki_highways)
 
+    # gov
     if add_gov_data:
         gov_highways = load_or_fetch_gov_interchanges(use_cache=use_cache)
         gov_highways.append(load_or_fetch_gov_weigh_stations(use_cache=use_cache))
@@ -1021,6 +1042,19 @@ def map_gov_to_interchanges(
         interchange.govs = govs
 
     return interchanges
+
+
+def extract_mock_data() -> None:
+    """Extract mock data for testing purposes."""
+    data = load_interchanges()
+    mock_data = []
+    for ic in data:
+        if ic.name == "石碇交流道" or "汐止系統" in ic.name:
+            mock_data.append(ic.model_dump())
+    import json
+
+    with open("interchanges_mock.json", "w", encoding="utf-8") as f:
+        json.dump(mock_data, f, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":
