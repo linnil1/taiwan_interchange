@@ -4,3 +4,4 @@ __pycache__
 pyproject.toml
 freeway_imgs
 freeway_pdfs
+.env

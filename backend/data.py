@@ -725,7 +725,7 @@ def add_manual_junction_names(node_dict: dict[int, str]) -> NodeRelationMap:
             road_type=RoadType.JUNCTION,
             relation_type=RelationType.RELATION,
         )
-    return junction_node_rel
+    return NodeRelationMap(junction_node_rel)
 
 
 def generate_interchanges_json(

@@ -104,15 +104,3 @@ The underlying OpenStreetMap data is licensed under the [Open Database License (
 Wikipedia content is available under [Creative Commons Attribution-ShareAlike 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
 
 Government highway data from the Freeway Bureau, Ministry of Transportation and Communications (交通部高速公路局) is available under the [Government Website Open Data Declaration](https://www.freeway.gov.tw/Publish.aspx?cnid=1660).
-
-### Citation
-When using this data or codebase, please cite this project and acknowledge the underlying data contributors:
-
-```
-Taiwan Interchange Explorer by linnil1
-Source: https://github.com/linnil1/taiwan-interchange
-Data derived from:
-- OpenStreetMap contributors
-- Wikipedia
-- Freeway Bureau, Ministry of Transportation and Communications (交通部高速公路局)
-```

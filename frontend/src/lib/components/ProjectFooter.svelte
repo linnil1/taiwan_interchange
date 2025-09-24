@@ -107,15 +107,15 @@
 
 <!-- Click outside to close dropdown -->
 {#if showLanguageDropdown}
-	<div
+	<button
+		type="button"
 		class="fixed inset-0 z-40"
-		tabindex="0"
-		aria-label="Close language dropdown"
+		aria-label="Language dropdown"
 		onclick={() => (showLanguageDropdown = false)}
 		onkeydown={(e) => {
 			if (e.key === 'Escape') {
 				showLanguageDropdown = false;
 			}
 		}}
-	></div>
+	></button>
 {/if}
