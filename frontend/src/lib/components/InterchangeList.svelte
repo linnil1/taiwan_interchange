@@ -52,7 +52,7 @@
 				onkeydown={(e) => e.key === 'Enter' && handleInterchangeClick(interchange)}
 			>
 				<div class="min-w-0">
-					<div class="font-medium text-gray-800 truncate">#{interchange.id} {interchange.name}</div>
+					<div class="font-medium text-gray-800 truncate">{interchange.name}</div>
 					{#if interchange.refs && interchange.refs.length}
 						<div class="mt-1 flex flex-wrap gap-1">
 							{#each interchange.refs as ref (ref.name)}
