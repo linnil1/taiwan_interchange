@@ -61,13 +61,16 @@
 
 	<!-- Detail Sidebar (appears when item selected) -->
 	{#if selectedInterchange}
-		<InterchangeDetail
-			interchange={selectedInterchange}
-			onClose={clearSelection}
-			bind:selectedRampIndex
-			bind:fitRampIndex
-			bind:selectedImage
-		/>
+		<div class="w-76 bg-white border-r border-gray-300 h-screen overflow-y-auto">
+			<InterchangeDetail
+				interchange={selectedInterchange}
+				onClose={clearSelection}
+				bind:selectedRampIndex
+				bind:fitRampIndex
+				bind:selectedImage
+				bind:showSidebar
+			/>
+		</div>
 	{/if}
 
 	<!-- Map Container -->

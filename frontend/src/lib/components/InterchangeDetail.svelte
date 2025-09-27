@@ -84,8 +84,8 @@
 	}
 </script>
 
-<div class="w-86 bg-white border-r border-gray-300 overflow-y-auto">
-	<div class="sticky top-0 bg-white border-b border-gray-300 p-4">
+<div class="w-full">
+	<div class="sticky top-0 bg-white border-b border-gray-300 p-3">
 		<div class="flex justify-between items-start">
 			<div class="min-w-0 flex-1">
 				<h2 class="text-lg font-bold text-gray-800">{interchange.name}</h2>
@@ -95,16 +95,31 @@
 						: m.ramps({ count: interchange.ramps.length })}
 				</div>
 			</div>
-			<button
-				class="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition-colors flex-shrink-0 flex items-center gap-1"
-				onclick={onClose}
-			>
-				<X size={16} />
-			</button>
+			<div class="flex flex-col items-end gap-2">
+				<button
+					class="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition-colors flex-shrink-0 flex items-center gap-1"
+					onclick={onClose}
+					title={m.close()}
+				>
+					<X size={16} />
+				</button>
+
+				<button
+					class="px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded hover:bg-blue-200 transition-colors flex-shrink-0 flex items-center gap-1"
+					onclick={() => (showSidebar = !showSidebar)}
+					title={showSidebar ? m.hide_interchange_list() : m.show_interchange_list()}
+				>
+					{#if showSidebar}
+						<PanelLeftClose size={16} />
+					{:else}
+						<PanelLeftOpen size={16} />
+					{/if}
+				</button>
+			</div>
 		</div>
 	</div>
 
-	<div class="p-4">
+	<div class="p-3">
 		<!-- Bounds Info -->
 		<!--
 		<div class="mb-4 p-3 bg-gray-50 rounded text-xs">
@@ -361,7 +376,7 @@
 					class="w-full mb-3 p-3 border rounded transition-all duration-300 cursor-pointer {selectedRampIndex ===
 					i
 						? 'border-blue-500 bg-blue-50 shadow-md'
-						: 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}"
+						: 'border-gray-200 hover:border-gray-300 hover:bg-gray-100'}"
 				>
 					<div class="flex justify-between items-start mb-2">
 						<div class="flex-1 text-center">
@@ -374,7 +389,7 @@
 								{#if selectedRampIndex === i}
 									<button
 										type="button"
-										class="ml-2 text-blue-500 hover:text-blue-700 transition-colors"
+										class="text-blue-500 hover:text-blue-700 transition-colors"
 										onclick={(e) => {
 											e.stopPropagation();
 											fitRampIndex = i;
@@ -397,14 +412,13 @@
 						<!-- eslint-disable svelte/no-navigation-without-resolve -->
 						<div class="text-sm text-gray-600 mb-2 text-center">
 							{#each ramp.destination as d (d.id)}
-								<div class="flex items-center justify-center mb-1">
+								<div class="flex items-center justify-between mb-1 gap-1">
 									<span
-										class="px-1.5 py-0.5 rounded border text-[10px] mr-2 {d.destination_type ===
-										'ENTER'
+										class="px-1.5 py-0.5 rounded border text-[10px] {d.destination_type === 'ENTER'
 											? 'border-gray-400 text-gray-700 bg-gray-100'
 											: 'border-gray-400 text-gray-700 bg-white'}">{d.destination_type}</span
 									>
-									<span class="mr-2 font-bold">{d.name}</span>
+									<span class="font-bold">{d.name}</span>
 									<a
 										href={getOSMLink(d.id, d.relation_type)}
 										target="_blank"
@@ -424,7 +438,7 @@
 					<!-- Ramp Navigation -->
 					{#if getRampConnections(ramp).fromRamps.length > 0 || getRampConnections(ramp).toRamps.length > 0}
 						{@const connections = getRampConnections(ramp)}
-						<div class="mb-2 text-xs grid grid-cols-2 gap-2 mt-3 mx-2">
+						<div class="mb-2 text-xs grid grid-cols-2 gap-2 mt-3">
 							<!-- Previous ramps (left column) -->
 							<div class="flex flex-col gap-1">
 								{#each connections.fromRamps as fromRamp (fromRamp.id)}
@@ -459,17 +473,20 @@
 					{/if}
 
 					<!-- Paths within ramp -->
-					<div class="ml-2 mt-6">
+					<div class="mt-6">
 						{#each ramp.paths as path, j (`${path.id}-${path.part}`)}
-							<div class="mb-2 p-2 bg-gray-50 rounded text-xs">
-								<div class="flex items-center justify-between mb-1">
-									<div class="font-medium text-gray-700">
+							<div class="mb-2 p-2 bg-gray-50 rounded mb-1 text-xs font-medium">
+								<!-- Path header -->
+								<div class="flex">
+									<div class="w-16 text-gray-700">
 										{m.path({ number: j + 1 })}
+									</div>
+									<div class="text-gray-600">
 										<a
 											href="https://www.openstreetmap.org/way/{path.id}"
 											target="_blank"
 											rel="noopener noreferrer"
-											class="text-blue-600 hover:text-blue-800 underline ml-2"
+											class="text-blue-600 hover:text-blue-800 underline"
 											onclick={(e) => e.stopPropagation()}
 										>
 											Way {path.id}
@@ -478,29 +495,26 @@
 											{m.part({ number: path.part })}
 										{/if}
 									</div>
-									<div class="text-gray-600 text-xs">
-										{m.nodes({ count: path.nodes.length })}
-									</div>
 								</div>
 
-								<!-- Node IDs - Horizontal layout with left alignment -->
-								<div class="text-gray-500 flex items-start">
-									<span class="font-medium mr-2 flex-shrink-0">{m.nodes_label()}</span>
-									<div
-										class="max-h-16 overflow-y-auto text-xs leading-tight flex-1 flex flex-wrap items-start"
-									>
-										{#each path.nodes as node, k (node.id)}
+								<!-- Nodes section - more compact -->
+								<div class="flex flex-wrap max-h-16 overflow-y-auto mt-1">
+									<div class="w-16 text-gray-700">
+										{m.nodes_label_with_count({ count: path.nodes.length })}
+									</div>
+									{#each path.nodes as node, k (node.id)}
+										<span class="mr-1">
 											<a
 												href="https://www.openstreetmap.org/node/{node.id}"
 												target="_blank"
 												rel="noopener noreferrer"
-												class="inline-block mr-1 text-blue-600 hover:text-blue-800 underline"
+												class="text-blue-600 hover:text-blue-800 underline"
 												onclick={(e) => e.stopPropagation()}
 											>
-												{node.id}
-											</a>{k < path.nodes.length - 1 ? ',' : ''}
-										{/each}
-									</div>
+												{node.id}</a
+											>{k < path.nodes.length - 1 ? ', ' : ''}
+										</span>
+									{/each}
 								</div>
 							</div>
 						{/each}
