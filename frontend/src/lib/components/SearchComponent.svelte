@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Interchange } from '$lib/types.js';
-	import { ChevronDown, ChevronUp } from 'lucide-svelte';
+	import { Filter } from 'lucide-svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	let {
@@ -35,11 +35,9 @@
 		}
 
 		let filtered = interchanges.filter((interchange: Interchange) => {
-			// Text search filter
+			// Text search filter (removed ID search)
 			const matchesSearch =
-				searchTerm === '' ||
-				interchange.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-				String(interchange.id).includes(searchTerm);
+				searchTerm === '' || interchange.name.toLowerCase().includes(searchTerm.toLowerCase());
 
 			// 地磅站 filter
 			const matchesWeighStation =
@@ -67,37 +65,39 @@
 </script>
 
 <div class="bg-gray-100 p-3 border-b border-gray-300 sticky top-0">
-	<div class="flex justify-between items-center mb-2">
-		<div class="font-bold">
-			{!includeWeighStations || !includeServiceAreas || selectedRefFilter !== 'all'
-				? m.interchanges_filtered({ count: filteredInterchanges.length })
-				: m.interchanges_total({ count: interchanges.length })}
-		</div>
+	<!-- Title -->
+	<div class="font-bold mb-2">
+		{!includeWeighStations ||
+		!includeServiceAreas ||
+		selectedRefFilter !== 'all' ||
+		searchTerm.trim() !== ''
+			? `${m.interchanges()} (${filteredInterchanges.length}/${interchanges.length})`
+			: `${m.interchanges()} (${interchanges.length})`}
+	</div>
+
+	<!-- Search input with filter button -->
+	<div class="flex gap-2 w-full">
+		<input
+			class="flex-1 rounded border border-gray-300 text-sm px-2 py-1 min-w-24 focus:outline-none focus:ring-2 focus:ring-blue-400"
+			type="search"
+			placeholder={m.search_placeholder()}
+			bind:value={searchTerm}
+			aria-label={m.search_placeholder()}
+		/>
 		<button
 			onclick={() => (showFilters = !showFilters)}
-			class="text-sm text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1"
-			title="Toggle filter options"
+			class="px-2 py-1 rounded transition-colors flex items-center justify-center {showFilters
+				? 'bg-blue-600 text-white hover:bg-blue-700'
+				: 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'}"
+			title={m.filters()}
 		>
-			{#if showFilters}
-				<ChevronUp size={16} />
-			{:else}
-				<ChevronDown size={16} />
-			{/if}
-			{m.filters()}
+			<Filter size={16} />
 		</button>
 	</div>
 
-	<!-- Search input -->
-	<input
-		class="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 mb-3"
-		type="search"
-		placeholder={m.search_placeholder()}
-		bind:value={searchTerm}
-	/>
-
 	<!-- Filter options (collapsible) -->
 	{#if showFilters}
-		<div class="space-y-2">
+		<div class="space-y-2 mt-2">
 			<!-- 地磅站 checkbox -->
 			<label class="flex items-center text-sm text-gray-700">
 				<input

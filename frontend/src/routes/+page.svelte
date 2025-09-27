@@ -16,6 +16,7 @@
 	let fitRampIndex: number | null = $state(null);
 	let filteredInterchanges: Interchange[] = $state([]);
 	let selectedImage: { src: string; alt: string } | null = $state(null);
+	let showSidebar: boolean = $state(true); // Toggle for sidebar visibility
 
 	// Fetch interchanges on mount
 	onMount(fetchInterchanges);
@@ -30,6 +31,7 @@
 		selectedInterchange = null;
 		selectedRampIndex = null;
 		fitRampIndex = null;
+		showSidebar = true; // Show sidebar when closing detail view
 	}
 </script>
 
@@ -40,7 +42,7 @@
 
 <div class="flex h-screen font-sans">
 	<!-- Left Sidebar - Search and Interchange List components -->
-	<div class="w-72 flex flex-col bg-white border-r border-gray-300">
+	<div class="w-64 flex flex-col bg-white border-r border-gray-300" class:hidden={!showSidebar}>
 		<SearchComponent
 			interchanges={$interchangesStore || []}
 			bind:searchTerm

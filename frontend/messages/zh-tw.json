@@ -47,5 +47,7 @@
 	"gov_northbound": "北上：",
 	"gov_eastbound": "東向：",
 	"gov_westbound": "西向：",
-	"gov_notes": "備註："
+	"gov_notes": "備註：",
+	"hide_interchange_list": "隱藏交流道列表",
+	"show_interchange_list": "顯示交流道列表"
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { X, ZoomIn } from 'lucide-svelte';
+	import { X, ZoomIn, PanelLeftClose, PanelLeftOpen } from 'lucide-svelte';
 	import type { Interchange, Ramp, Destination } from '$lib/types.js';
 	import * as m from '$lib/paraglide/messages';
 
@@ -8,13 +8,15 @@
 		onClose,
 		selectedRampIndex = $bindable(null),
 		fitRampIndex = $bindable(null),
-		selectedImage = $bindable(null)
+		selectedImage = $bindable(null),
+		showSidebar = $bindable(true)
 	}: {
 		interchange: Interchange;
 		onClose: () => void;
 		selectedRampIndex?: number | null;
 		fitRampIndex?: number | null;
 		selectedImage?: { src: string; alt: string } | null;
+		showSidebar?: boolean;
 	} = $props();
 
 	let rampElements: HTMLElement[] = [];

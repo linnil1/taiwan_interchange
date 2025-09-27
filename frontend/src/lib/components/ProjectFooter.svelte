@@ -17,12 +17,10 @@
 	let currentLocale = $derived(getLocale());
 </script>
 
-<div class="border-t border-gray-300 px-3 py-2 bg-gray-50">
+<div class="border-t border-gray-300 px-3 py-2 bg-gray-50 gap-y-1 flex flex-col">
 	<!-- Project Title Row -->
-	<div class="text-xs mb-2 flex gap-x-2 items-center">
-		<div class="font-semibold text-gray-800">{m.project_title()}</div>
-		<div class="text-gray-600">{m.project_author({ author: 'linnil1' })}</div>
-	</div>
+	<div class="text-ms font-semibold text-gray-800">{m.project_title()}</div>
+	<div class="text-xs text-gray-600">{m.project_author({ author: 'linnil1' })}</div>
 
 	<!-- Language and About Row -->
 	<div class="flex items-center justify-between">
@@ -33,7 +31,7 @@
 				aria-haspopup="listbox"
 				aria-expanded={showLanguageDropdown}
 				aria-label={m.language()}
-				class="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+				class="flex items-center gap-1 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
 				onclick={() => (showLanguageDropdown = !showLanguageDropdown)}
 				onkeydown={(e) => {
 					if (e.key === 'Enter' || e.key === ' ') {
