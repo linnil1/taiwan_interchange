@@ -65,16 +65,24 @@ def contract_paths_to_ramps(
         outgoing_paths[s.id].append(p)
         incoming_paths[e.id].append(p)
 
-    begin_node_ids1 = [
-        node_id for node_id, _ in outgoing_paths.items() if incoming_paths.get(node_id) is None
-    ]
-    # consider non-oneway or loop case
-    begin_node_ids2 = [
-        node_id
-        for node_id, paths in outgoing_paths.items()
-        if len(incoming_paths.get(node_id, [])) == 1 and len(paths) == 1
-    ]
-    begin_node_ids = begin_node_ids1 + begin_node_ids2
+    def is_begin_node(node_id: int) -> bool:
+        """Check if a node is a begin node (no incoming paths or all incoming way IDs are in outgoing paths)."""
+        in_paths = incoming_paths.get(node_id, [])
+        out_paths = outgoing_paths.get(node_id, [])
+
+        # Case 1: No incoming paths (original begin node definition)
+        if not in_paths:
+            return True
+
+        # Case 2: All incoming path way IDs are included in outgoing path way IDs
+        # (excludes non-oneway as incoming)
+        if out_paths:
+            in_way_ids = {p.id for p in in_paths}
+            out_way_ids = {p.id for p in out_paths}
+            if in_way_ids.issubset(out_way_ids):
+                return True
+
+        return False
 
     # Track included paths by subpath id to avoid duplicates / cycles
     used: set[str] = set()
@@ -113,6 +121,9 @@ def contract_paths_to_ramps(
         return next_candidates[0] if len(next_candidates) == 1 else None
 
     def extend_chain(start: Path) -> list[Path]:
+        if start.get_subpath_id() in used:
+            return []
+
         chain = [start]
         used.add(start.get_subpath_id())
         cur = start
@@ -149,22 +160,32 @@ def contract_paths_to_ramps(
         return chain
 
     ramps: list[Ramp] = []
+    nodes_to_process: deque[int] = deque()
 
-    # Prefer starting from begin nodes for deterministic chains
-    for node_id in begin_node_ids:
-        for p in outgoing_paths.get(node_id, []):
-            if p.get_subpath_id() in used:
-                continue
-            chain = extend_chain(p)
+    def extend_and_add_chain(start: Path) -> list[Path]:
+        chain = extend_chain(start)
+        if chain:
             ramps.append(Ramp(id=len(ramps), paths=chain))
+            # Add the outgoing node of the last path to queue for later processing
+            last_path = chain[-1]
+            last_node_id = last_path.get_endpoint_nodes()[1].id
+            nodes_to_process.append(last_node_id)
+        return chain
 
-    # Fallback: cover any remaining paths (e.g., inside small cycles)
+    # Initialize queue with all begin nodes
+    for node_id in outgoing_paths.keys():
+        if is_begin_node(node_id):
+            nodes_to_process.append(node_id)
+
+    # Process nodes in the queue (starting with begin nodes)
+    while nodes_to_process:
+        node_id = nodes_to_process.popleft()
+        for p in outgoing_paths.get(node_id, []):
+            extend_and_add_chain(p)
+
+    # Not possbile (?)
     for p in paths:
-        sid = p.get_subpath_id()
-        if sid in used:
-            continue
-        chain = extend_chain(p)
-        ramps.append(Ramp(id=len(ramps), paths=chain))
+        assert p.get_subpath_id() in used, f"Path {p.id} not included in any ramp"
 
     return ramps
 
