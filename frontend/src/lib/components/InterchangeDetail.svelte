@@ -55,18 +55,22 @@
 		return { fromRamps, toRamps };
 	}
 
-	// Helper function to format ramp display name - just show #number
+	// Helper function to format ramp display name - show display ID if available, fallback to #real_id
 	function getRampDisplayName(ramp: Ramp) {
-		return `#${ramp.id}`;
+		const displayId = interchange.ramp_display_ids?.[ramp.id];
+		return displayId ? `#${displayId}` : `#${ramp.id}`;
 	}
 
-	// Helper function to format ramp display name for navigation - show destinations + #number
+	// Helper function to format ramp display name for navigation - show destinations + display ID
 	function getRampNavigationDisplayName(ramp: Ramp) {
+		const displayId = interchange.ramp_display_ids?.[ramp.id];
+		const idDisplay = displayId ? `#${displayId}` : `#${ramp.id}`;
+
 		if (ramp.destination && ramp.destination.length > 0) {
 			const destinationNames = ramp.destination.map((d: Destination) => d.name).join(', ');
-			return `${destinationNames} #${ramp.id}`;
+			return `${destinationNames} ${idDisplay}`;
 		}
-		return `#${ramp.id}`;
+		return idDisplay;
 	}
 
 	// Helper function to get OSM link based on relation type

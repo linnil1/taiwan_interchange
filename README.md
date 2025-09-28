@@ -87,7 +87,7 @@ The frontend always reads data from `/interchanges.json` (static asset) in both 
 
 The production site is available at: **taiwan-interchanges.linnil1.me**
 
-Github Page: **https://github.com/linnil1/taiwan-interchange**
+Github Page: **https://github.com/linnil1/taiwan_interchange**
 
 ## License & Citation
 

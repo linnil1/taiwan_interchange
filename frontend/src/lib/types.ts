@@ -156,6 +156,8 @@ export interface Interchange {
 	govs: GovData[];
 	/** Wikidata IDs from OSM motorway_junction nodes */
 	wikidata_ids: string[];
+	/** Mapping from actual ramp ID to display ID (1, 2, 3...) */
+	ramp_display_ids: Record<number, number>;
 }
 
 // Utility types for API responses
@@ -278,6 +280,8 @@ export function isInterchange(obj: unknown): obj is Interchange {
 		Array.isArray((obj as Interchange).govs) &&
 		(obj as Interchange).govs.every(isGovData) &&
 		Array.isArray((obj as Interchange).wikidata_ids) &&
-		(obj as Interchange).wikidata_ids.every((id: unknown) => typeof id === 'string')
+		(obj as Interchange).wikidata_ids.every((id: unknown) => typeof id === 'string') &&
+		typeof (obj as Interchange).ramp_display_ids === 'object' &&
+		(obj as Interchange).ramp_display_ids !== null
 	);
 }

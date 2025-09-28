@@ -22,6 +22,7 @@ from graph_operations import (
     extract_branch_ways,
     extract_endpoint_ways,
     filter_endpoints_by_motorway_link,
+    generate_ramp_display_ids,
     get_reverse_topological_order,
 )
 from models import (
@@ -901,6 +902,9 @@ def generate_interchanges_json(
     print(f"Extracted {len(wikidata_node_rel)} Wikidata IDs from OSM motorway_junction nodes")
     interchanges = map_wikidata_to_interchanges(interchanges, wikidata_node_rel)
 
+    # Generate display IDs for frontend
+    interchanges = generate_display_ids_for_interchanges(interchanges)
+
     json_file_path = save_interchanges(interchanges, save_static=True)
     print(f"Successfully saved interchanges to {json_file_path}")
 
@@ -1007,6 +1011,32 @@ def map_wiki_to_interchanges(
     for interchange, wikis in zip(interchanges, matched_wikis):
         interchange.wikis = wikis
 
+    return interchanges
+
+
+def generate_display_ids_for_interchanges(interchanges: list[Interchange]) -> list[Interchange]:
+    """Generate display IDs for all interchanges and sort ramps based on display IDs."""
+    for interchange in interchanges:
+        # Generate display ID mapping
+        interchange.ramp_display_ids = generate_ramp_display_ids(interchange.ramps)
+
+        if not interchange.ramp_display_ids:
+            continue
+
+        # Sort ramps based on display IDs
+        interchange.ramps = sorted(
+            interchange.ramps,
+            key=lambda ramp: interchange.ramp_display_ids[ramp.id],
+        )
+
+        # Sort from_ramps and to_ramps for each ramp based on display IDs
+        for ramp in interchange.ramps:
+            ramp.from_ramps = sorted(
+                ramp.from_ramps, key=lambda ramp_id: interchange.ramp_display_ids[ramp_id]
+            )
+            ramp.to_ramps = sorted(
+                ramp.to_ramps, key=lambda ramp_id: interchange.ramp_display_ids[ramp_id]
+            )
     return interchanges
 
 

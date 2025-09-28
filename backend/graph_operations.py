@@ -597,3 +597,51 @@ def extract_branch_ways(ways: list[Path]) -> list[Path]:
     branch_ways = [w for w in ways if w.id not in longest_path_ids]
 
     return branch_ways
+
+
+def generate_ramp_display_ids(ramps: list[Ramp]) -> dict[int, int]:
+    """Generate sequential display IDs (1, 2, 3...) for ramps based on DFS traversal order.
+
+    Uses NetworkX DFS traversal on the DAG structure for deterministic ordering.
+    Returns a mapping from actual ramp_id -> display_id.
+
+    Args:
+        ramps: List of Ramp objects with DAG connectivity
+
+    Returns:
+        Dictionary mapping actual ramp IDs to sequential display IDs starting from 1
+    """
+    if not ramps:
+        return {}
+
+    # Create NetworkX graph from DAG edges
+    G = get_graph_from_ramps_dag(ramps)
+
+    # Find starting nodes (no incoming edges)
+    start_nodes = [node for node in G.nodes() if G.in_degree(node) == 0]
+    if not start_nodes:
+        assert False, "No start node found in DAG; cannot generate display IDs"
+
+    # Get DFS order starting from ALL start nodes, in sorted order for determinism
+    visited = set()
+    dfs_order = []
+
+    for start_node in sorted(start_nodes):
+        if start_node not in visited:
+            component_dfs = list(nx.dfs_preorder_nodes(G, source=start_node))
+            for node in component_dfs:
+                if node not in visited:
+                    dfs_order.append(node)
+                    visited.add(node)
+
+    # Handle any remaining unvisited nodes (shouldn't happen with proper start node detection)
+    remaining_nodes = [node for node in G.nodes() if node not in visited]
+    if remaining_nodes:
+        assert False, "Unvisited nodes remain in DAG; cannot generate complete display IDs"
+
+    # Create mapping from ramp_id to display_id
+    display_id_mapping = {}
+    for i, ramp_id in enumerate(dfs_order, start=1):
+        display_id_mapping[ramp_id] = i
+
+    return display_id_mapping

@@ -158,9 +158,8 @@ class Interchange(BaseModel):
     refs: list[Relation] = []  # freeway route_master relations that this interchange belongs to
     wikis: list[WikiData] = []
     govs: list[GovData] = []  # Government data if available
-    wikidata_ids: list[
-        str
-    ] = []  # Wikidata IDs from OSM motorway_junction nodes (e.g., ["Q11111966"])
+    wikidata_ids: list[str] = []  # Wikidata IDs from OSM (e.g., ["Q11111966"])
+    ramp_display_ids: dict[int, int] = {}  # mapping from actual ramp_id to display_id (1,2,3...)
 
     def list_nodes(self) -> list[Node]:
         """Get all nodes from all ramps in this interchange"""
