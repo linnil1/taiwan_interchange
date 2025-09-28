@@ -70,6 +70,7 @@ from relation_operations import (
     extract_ramp_name_by_end_node_relation,
     extract_ramp_name_by_node_relation,
     extract_ramp_name_by_way_relation,
+    extract_wikidata_ids_from_nodes,
     wrap_adj_road_relation,
     wrap_junction_name_relation,
     wrap_relation_to_node_relation,
@@ -895,6 +896,11 @@ def generate_interchanges_json(
         interchanges = map_gov_to_interchanges(interchanges, gov_highways)
         # Copy freeway PDFs to static folder
 
+    # wikidata from OSM nodes
+    wikidata_node_rel = extract_wikidata_ids_from_nodes(node_dict, IGNORED_NODE_IDS)
+    print(f"Extracted {len(wikidata_node_rel)} Wikidata IDs from OSM motorway_junction nodes")
+    interchanges = map_wikidata_to_interchanges(interchanges, wikidata_node_rel)
+
     json_file_path = save_interchanges(interchanges, save_static=True)
     print(f"Successfully saved interchanges to {json_file_path}")
 
@@ -1000,6 +1006,33 @@ def map_wiki_to_interchanges(
     # Set the wikis attribute for each interchange
     for interchange, wikis in zip(interchanges, matched_wikis):
         interchange.wikis = wikis
+
+    return interchanges
+
+
+def map_wikidata_to_interchanges(
+    interchanges: list[Interchange], wikidata_node_rel: NodeRelationMap
+) -> list[Interchange]:
+    """
+    Map Wikidata IDs from OSM motorway_junction nodes to interchanges.
+
+    Args:
+        interchanges: List of interchanges to map Wikidata IDs to
+        wikidata_node_rel: NodeRelationMap containing wikidata IDs as relation names
+
+    Returns:
+        List of interchanges with wikidata_ids populated where node matches are found
+    """
+    for interchange in interchanges:
+        wikidata_ids: set[str] = set()
+
+        for ramp in interchange.ramps:
+            wikidata_relations = extract_ramp_name_by_node_relation(ramp, wikidata_node_rel)
+            for relation in wikidata_relations:
+                wikidata_ids.add(relation.name)  # relation.name contains the wikidata ID
+
+        # Set the wikidata_ids as a sorted list for consistency
+        interchange.wikidata_ids = sorted(list(wikidata_ids))
 
     return interchanges
 

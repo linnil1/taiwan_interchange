@@ -270,3 +270,31 @@ def wrap_junction_name_relation(
                 relation_type=RelationType.NODE,
             )
     return NodeRelationMap(node_to_relation)
+
+
+def extract_wikidata_ids_from_nodes(
+    node_dict: dict[int, OverPassNode], ignored_ids: set[int] | None = None
+) -> NodeRelationMap:
+    """Extract Wikidata IDs from motorway_junction nodes as a NodeRelationMap.
+
+    Returns a NodeRelationMap where each relation contains the Wikidata ID as the name.
+    This allows reusing extract_ramp_name_by_node_relation for mapping to interchanges.
+    Optionally ignores node IDs provided in ignored_ids.
+    """
+    ignored_ids = ignored_ids or set()
+    node_to_relation: dict[int, Relation] = {}
+    for node_id, osm_node in node_dict.items():
+        if (
+            osm_node
+            and osm_node.tags
+            and osm_node.tags.get("highway") == "motorway_junction"
+            and "wikidata" in osm_node.tags
+            and (osm_node.id not in ignored_ids)
+        ):
+            node_to_relation[node_id] = Relation(
+                id=osm_node.id,
+                name=osm_node.tags["wikidata"],  # Use wikidata ID as the name
+                road_type=RoadType.WIKIDATA,
+                relation_type=RelationType.NODE,
+            )
+    return NodeRelationMap(node_to_relation)

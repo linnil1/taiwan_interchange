@@ -153,6 +153,29 @@
 			</div>
 		{/if}
 
+		<!-- Wikidata IDs Section -->
+		{#if interchange.wikidata_ids && interchange.wikidata_ids.length > 0}
+			<div class="mt-2">
+				<div class="text-xs text-gray-500 mb-1">Wikidata</div>
+				<div class="flex flex-wrap gap-1">
+					{#each interchange.wikidata_ids as wikidataId (wikidataId)}
+						<span
+							class="inline-flex items-center rounded bg-green-100 px-2 py-0.5 text-xs text-green-700 border border-green-200"
+						>
+							<a
+								href="https://www.wikidata.org/wiki/{wikidataId}"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="hover:underline"
+							>
+								{wikidataId}
+							</a>
+						</span>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
 		<!-- Wikipedia Data Section -->
 		{#if interchange.wikis && interchange.wikis.length > 0}
 			<!-- eslint-disable svelte/no-navigation-without-resolve -->

@@ -154,6 +154,8 @@ export interface Interchange {
 	wikis: WikiData[];
 	/** Government data if available */
 	govs: GovData[];
+	/** Wikidata IDs from OSM motorway_junction nodes */
+	wikidata_ids: string[];
 }
 
 // Utility types for API responses
@@ -274,6 +276,8 @@ export function isInterchange(obj: unknown): obj is Interchange {
 		Array.isArray((obj as Interchange).wikis) &&
 		(obj as Interchange).wikis.every(isWikiData) &&
 		Array.isArray((obj as Interchange).govs) &&
-		(obj as Interchange).govs.every(isGovData)
+		(obj as Interchange).govs.every(isGovData) &&
+		Array.isArray((obj as Interchange).wikidata_ids) &&
+		(obj as Interchange).wikidata_ids.every((id: unknown) => typeof id === 'string')
 	);
 }
