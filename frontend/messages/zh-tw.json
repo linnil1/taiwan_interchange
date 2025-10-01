@@ -50,5 +50,7 @@
 	"gov_westbound": "西向：",
 	"gov_notes": "備註：",
 	"hide_interchange_list": "隱藏交流道列表",
-	"show_interchange_list": "顯示交流道列表"
+	"show_interchange_list": "顯示交流道列表",
+	"map_type_openstreetmap": "開放街圖",
+	"map_type_google": "Google 地圖"
 }

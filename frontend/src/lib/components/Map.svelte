@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { env } from '$env/dynamic/public';
 	import type { Interchange } from '$lib/types.js';
-	import type { Map as LeafletMap, Marker, Polyline } from 'leaflet';
+	import type { Map as LeafletMap, Marker, Polyline, Layer } from 'leaflet';
 	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
+	import * as m from '$lib/paraglide/messages';
+	import { SiOpenstreetmap, SiGooglemaps } from '@icons-pack/svelte-simple-icons';
 
 	let {
 		selectedInterchange = $bindable(null),
@@ -26,24 +29,100 @@
 	let selectedPaths: Polyline[] = [];
 	let previousSelectedId: number | null = null; // Track previous selection
 	let L: typeof import('leaflet') | null = null; // Leaflet will be loaded dynamically
+	let currentMapLayer: Layer | null = null; // Track current base layer
+	let selectedMapType = $state<'openstreetmap' | 'google'>('openstreetmap'); // Map type selection
+	let availableMapTypes = $state<('openstreetmap' | 'google')[]>(['openstreetmap']); // Available map types
+	let showMapTypeDropdown = $state(false); // Dropdown state
+	let googleMapsAvailable = $state(false); // Track if Google Maps is available
 
 	onMount(() => {
-		if (browser && mapContainer) {
-			// Dynamically import Leaflet in the browser
-			import('leaflet').then((leafletModule) => {
+		// Initialize map asynchronously
+		(async () => {
+			if (browser && mapContainer) {
+				// Check if Google Maps API key is available
+				const apiKey = env.PUBLIC_GOOGLE_MAPS_API_KEY;
+				googleMapsAvailable = !!(apiKey && apiKey.trim() !== '');
+
+				// Dynamically import Leaflet in the browser
+				const leafletModule = await import('leaflet');
 				L = leafletModule.default;
 
 				// Initialize the map
 				map = L.map(mapContainer).setView([23.2, 120.3], 8);
 
-				L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-					maxZoom: 19
-				}).addTo(map);
+				// Load Google Maps API if available
+				if (googleMapsAvailable && apiKey) {
+					await loadGoogleMapsAPI(apiKey);
+				}
+				try {
+					await import('leaflet.gridlayer.googlemutant');
+				} catch (e) {
+					console.error('Failed to load leaflet.gridlayer.googlemutant', e);
+					googleMapsAvailable = false;
+				}
 
-				// Initial markers update will be handled by effects
-			});
-		}
+				// Set available map types
+				availableMapTypes = googleMapsAvailable ? ['openstreetmap', 'google'] : ['openstreetmap'];
+
+				// Add initial layer (OpenStreetMap)
+				addMapLayer('openstreetmap');
+			}
+		})();
 	});
+
+	async function loadGoogleMapsAPI(apiKey: string) {
+		return new Promise<void>((resolve) => {
+			// Check if Google Maps API is already loaded
+			if (window.google && window.google.maps) {
+				resolve();
+				return;
+			}
+
+			// Create and load the script
+			const script = document.createElement('script');
+			script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+			script.async = true;
+			script.defer = true;
+			script.onload = () => resolve();
+			script.onerror = () => {
+				console.error('Failed to load Google Maps API');
+				googleMapsAvailable = false;
+				resolve();
+			};
+			document.head.appendChild(script);
+		});
+	}
+
+	async function addMapLayer(mapType: 'openstreetmap' | 'google') {
+		if (!map || !L) return;
+
+		// Remove existing layer
+		if (currentMapLayer) {
+			map.removeLayer(currentMapLayer);
+			currentMapLayer = null;
+		}
+
+		if (mapType === 'google' && availableMapTypes.includes('google')) {
+			// Add Google Maps layer using GoogleMutant
+			// @ts-expect-error: Not used, but import is necessary
+			currentMapLayer = L.gridLayer
+				.googleMutant({
+					type: 'roadmap'
+				})
+				.addTo(map);
+		} else {
+			// Add OpenStreetMap layer
+			currentMapLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+				maxZoom: 19
+			}).addTo(map);
+		}
+	}
+
+	function selectMapType(mapType: 'openstreetmap' | 'google') {
+		selectedMapType = mapType;
+		showMapTypeDropdown = false;
+		addMapLayer(mapType);
+	}
 
 	// Use effect to watch var changes
 	// 1. Use console.log to make svelte track the changed. DO NOT REMOVED
@@ -312,7 +391,60 @@
 	}
 </script>
 
-<div bind:this={mapContainer} class="w-full h-full relative"></div>
+<div class="w-full h-full relative">
+	<div bind:this={mapContainer} class="w-full h-full"></div>
+
+	<!-- Map Type Selector -->
+	{#if availableMapTypes.length > 1}
+		<div
+			class="absolute top-2.5 right-2.5 z-[1000]"
+			role="button"
+			tabindex="0"
+			onmouseenter={() => (showMapTypeDropdown = true)}
+			onmouseleave={() => (showMapTypeDropdown = false)}
+		>
+			<div
+				class="flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-gray-300/70 rounded text-sm font-medium text-gray-700 shadow-md hover:bg-gray-50 transition-colors cursor-pointer"
+			>
+				{#if selectedMapType === 'google'}
+					<SiGooglemaps size={16} />
+					<span>{m.map_type_google()}</span>
+				{:else}
+					<SiOpenstreetmap size={16} />
+					<span>{m.map_type_openstreetmap()}</span>
+				{/if}
+				<svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"
+					></path>
+				</svg>
+			</div>
+
+			{#if showMapTypeDropdown}
+				<div
+					class="absolute top-full right-0 bg-white border-2 border-gray-300/70 rounded shadow-lg overflow-hidden w-full"
+				>
+					{#each availableMapTypes as mapType (mapType)}
+						<button
+							onclick={() => selectMapType(mapType)}
+							class="w-full px-3 py-2 flex items-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors {selectedMapType ===
+							mapType
+								? 'text-blue-600'
+								: ''}"
+						>
+							{#if mapType === 'google'}
+								<SiGooglemaps size={16} />
+								<span>{m.map_type_google()}</span>
+							{:else}
+								<SiOpenstreetmap size={16} />
+								<span>{m.map_type_openstreetmap()}</span>
+							{/if}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{/if}
+</div>
 
 <style>
 	:global(.custom-interchange-marker) {

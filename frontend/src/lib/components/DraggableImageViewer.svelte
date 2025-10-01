@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { X, GripHorizontal } from 'lucide-svelte';
-	
+
 	interface Props {
 		selectedImage: { src: string; alt: string } | null;
 	}

@@ -50,5 +50,7 @@
 	"gov_westbound": "Westbound:",
 	"gov_notes": "Notes:",
 	"hide_interchange_list": "Hide interchange list",
-	"show_interchange_list": "Show interchange list"
+	"show_interchange_list": "Show interchange list",
+	"map_type_openstreetmap": "OpenStreetMap",
+	"map_type_google": "Google Maps"
 }
