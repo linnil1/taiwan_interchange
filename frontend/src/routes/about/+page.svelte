@@ -21,6 +21,73 @@
 	import { SiGithub } from '@icons-pack/svelte-simple-icons';
 	import * as m from '$lib/paraglide/messages';
 	import { resolve } from '$app/paths';
+
+	const challenges = [
+		{
+			en: 'Extract ramp data (including non-motorway_link tagged roads like endpoints)',
+			zh: '抓取匝道資料（包含有些非標記 motorway_link 的道路，比如說端點）'
+		},
+		{
+			en: 'Classify ramps to corresponding interchanges (some edge cases are hardcoded; some inseparable interchanges remain grouped)',
+			zh: '將匝道分類到對應交流道（當然，有些奇怪的 case 還是寫死的；有些無法分開的交流道還是會弄在一起）'
+		},
+		{
+			en: 'Interchange naming (mostly using junction names, but manual handling for special cases)',
+			zh: '交流道命名（大部分使用出口節點名稱，但也要手動處理一些特殊案例）'
+		},
+		{
+			en: 'Handle ramps for weigh stations or interchanges that only serve weigh stations',
+			zh: '處理匝道可能用於地磅站，或該交流道只有地磅站的情況'
+		},
+		{
+			en: 'Reorganize and merge nodes/ways (ways in OSM serve non-purely functional roles, so we use RAMP class as wrapper)',
+			zh: '重新整理合併 node 和 way（尤其是 way 在 OSM 中的角色非純粹功能性，所以我用 RAMP 這個 class 來包裝）'
+		},
+		{
+			en: 'Mark ramps and their upstream ramps with destination roads',
+			zh: '標記匝道及其上游匝道的目標道路'
+		},
+		{
+			en: 'Special handling for elevated roads in Xizhi, Yangmei, and Kaohsiung',
+			zh: '汐止、楊梅的高架道路，高雄的高架道路有特別處理'
+		},
+		{
+			en: 'Comprehensive handling of OSM tag markings (there are really many different tagging methods)',
+			zh: '完整處理 OSM 裡的 tag 標記（標記方法真的很多種）'
+		},
+		{
+			en: 'Build interactive map with complete OSM Way and Node ID references',
+			zh: '建立互動地圖並有完整的 OSM Way 和 Node ID 參考'
+		},
+		{
+			en: 'Handle ramp connection issues, including cloverleaf interchange loops; some ramps are not consistently tagged as one-way',
+			zh: '處理匝道連接問題，包含苜蓿葉型交流道中的環路問題；而且有些匝道並未被標註為單向'
+		},
+		{
+			en: 'Establish connections between ramps and national highways and sort accordingly',
+			zh: '建立匝道與國道的連結並以此排序'
+		},
+		{
+			en: 'Integrate both OpenStreetMap and Google Maps in the frontend for flexible visualization',
+			zh: '在前端整合開放街圖和 Google 地圖，提供彈性的視覺化選擇'
+		},
+		{
+			en: 'Integrate Wikipedia interchange data (parse structured pages to enrich junction names, descriptions, and listings)',
+			zh: '結合維基百科交流道資料（解析結構化頁面以補強交流道名稱、描述與列表）'
+		},
+		{
+			en: 'Extract Wikidata identifiers/links from OSM tags',
+			zh: '擷取 OSM tags 的 Wikidata ID/連結'
+		},
+		{
+			en: 'Integrate Freeway Bureau textual and facility data (metadata, facility lists) to enrich junction information with official descriptions and attributes',
+			zh: '整合交通部高速公路局的文字與設施資料，以官方描述與屬性補強交流道資訊'
+		},
+		{
+			en: 'Support official interchange sketch images: convert provided PDFs to web-friendly images or tiles and display them with an interactive viewer (pan/zoom, overlay layers, toggle annotations)',
+			zh: '支援官方交流道示意圖：若為 PDF 先轉成網頁友好圖片或切片，並在網站上顯示，提供互動檢視（平移/縮放、圖層疊加、開關標註）'
+		}
+	];
 </script>
 
 <svelte:head>
@@ -266,186 +333,16 @@
 						</p>
 
 						<div class="grid md:grid-cols-2 gap-2 text-sm mb-4">
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Extract ramp data (including non-motorway_link tagged roads like endpoints)
+							{#each challenges as challenge}
+								<div class="flex items-start">
+									<span class="text-gray-700 mr-2">•</span>
+									<div class="text-gray-700">{challenge.en}</div>
 								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									抓取匝道資料（包含有些非標記 motorway_link 的道路，比如說端點）
+								<div class="flex items-start">
+									<span class="text-gray-700 mr-2">•</span>
+									<div class="text-gray-700">{challenge.zh}</div>
 								</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Classify ramps to corresponding interchanges (some edge cases are hardcoded; some
-									inseparable interchanges remain grouped)
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									將匝道分類到對應交流道（當然，有些奇怪的 case
-									還是寫死的；有些無法分開的交流道還是會弄在一起）
-								</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Interchange naming (mostly using junction names, but manual handling for special
-									cases)
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									交流道命名（大部分使用 junction 名稱，但也要手動處理一些特殊案例）
-								</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Handle ramps for weigh stations or interchanges that only serve weigh stations
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">處理匝道可能用於地磅站，或該交流道只有地磅站的情況</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Reorganize and merge nodes/ways (ways in OSM serve non-purely functional roles, so
-									we use RAMP class as wrapper)
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									重新整理合併 node 和 way（尤其是 way 在 OSM 中的角色非純粹功能性，所以我用 RAMP
-									這個 class 來包裝）
-								</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Mark ramps and their upstream ramps with destination roads
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">標記匝道及其上游匝道的目標道路</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Special handling for elevated roads in Xizhi, Yangmei, and Kaohsiung
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">汐止、楊梅的高架道路，高雄的高架道路有特別處理</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Comprehensive handling of OSM tag markings (there are really many different
-									tagging methods)
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">完整處理 OSM 裡的 tag 標記（標記方法真的很多種）</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Build interactive map with complete OSM Way and Node ID references
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">建立互動地圖並有完整的 OSM Way 和 Node ID 參考</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Handle ramp connection issues, including cloverleaf interchange loops; some ramps
-									are not consistently tagged as one-way
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									處理匝道連接問題，包含苜蓿葉型交流道中的環路問題；而且有些匝道並未被標註為單向
-								</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Establish connections between ramps and national highways and sort accordingly
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">建立匝道與國道的連結並以此排序</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Integrate Wikipedia interchange data (parse structured pages to enrich junction
-									names, descriptions, and listings)
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									結合維基百科交流道資料（解析結構化頁面以補強交流道名稱、描述與列表）
-								</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Integrate Freeway Bureau textual and facility data (metadata, facility lists) to
-									enrich junction information with official descriptions and attributes
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									整合交通部高速公路局的文字與設施資料，以官方描述與屬性補強交流道資訊
-								</div>
-							</div>
-
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									Support official interchange sketch images: convert provided PDFs to web-friendly
-									images or tiles and display them with an interactive viewer (pan/zoom, overlay
-									layers, toggle annotations)
-								</div>
-							</div>
-							<div class="flex items-start">
-								<span class="text-gray-700 mr-2">•</span>
-								<div class="text-gray-700">
-									支援官方交流道示意圖：若為 PDF
-									先轉成網頁友好圖片或切片，並在網站上顯示，提供互動檢視（平移/縮放、圖層疊加、開關標註）
-								</div>
-							</div>
+							{/each}
 						</div>
 					</div>
 
