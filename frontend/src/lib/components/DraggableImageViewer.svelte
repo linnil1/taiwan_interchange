@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { X, GripHorizontal } from 'lucide-svelte';
+	
 	interface Props {
 		selectedImage: { src: string; alt: string } | null;
 	}
@@ -94,15 +96,9 @@
 			onclick={closeViewer}
 			class="text-gray-500 hover:text-gray-700 p-1 rounded hover:bg-gray-200"
 			title="Close (Esc)"
+			aria-label="Close"
 		>
-			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M6 18L18 6M6 6l12 12"
-				/>
-			</svg>
+			<X class="w-4 h-4" />
 		</button>
 	</div>
 
@@ -120,11 +116,10 @@
 	<div
 		class="absolute bottom-0 right-0 w-4 h-4 cursor-nw-resize"
 		onmousedown={handleResizeMouseDown}
+		role="button"
+		tabindex="0"
+		aria-label="Resize"
 	>
-		<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
-			<path
-				d="M22,22H20V20H22V22M22,18H20V16H22V18M18,22H16V20H18V22M18,18H16V16H18V18M14,22H12V20H14V22M22,14H20V12H22V14Z"
-			/>
-		</svg>
+		<GripHorizontal class="w-4 h-4 text-gray-400 rotate-45" />
 	</div>
 </div>

@@ -18,6 +18,7 @@
 		BookOpen,
 		Sparkles
 	} from 'lucide-svelte';
+	import { SiGithub } from '@icons-pack/svelte-simple-icons';
 	import * as m from '$lib/paraglide/messages';
 	import { resolve } from '$app/paths';
 </script>
@@ -566,11 +567,7 @@
 				<div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
 					<div class="flex items-center space-x-4">
 						<div class="w-16 h-16 rounded-full flex items-center justify-center">
-							<img
-								src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/github.svg"
-								alt="GitHub"
-								class="w-16 h-16 filter"
-							/>
+							<SiGithub size={64} />
 						</div>
 						<div class="flex-1">
 							<h3 class="text-lg font-medium text-gray-800">

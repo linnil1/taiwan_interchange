@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { locales, getLocale, setLocale } from '$lib/paraglide/runtime';
 	import * as m from '$lib/paraglide/messages';
-	import { Info, Globe, Languages } from 'lucide-svelte';
+	import { Info, Globe, Languages, ChevronDown, Check } from 'lucide-svelte';
 	import { resolve } from '$app/paths';
 
 	function handleLanguageChange(lang: string) {
@@ -45,10 +45,7 @@
 			>
 				<Languages size={12} />
 				<span>{languageNames[currentLocale] || currentLocale}</span>
-				<svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"
-					></path>
-				</svg>
+				<ChevronDown class="w-3 h-3 ml-1" />
 			</button>
 
 			{#if showLanguageDropdown}
@@ -78,13 +75,7 @@
 							<Globe size={12} />
 							{languageNames[lang] || lang}
 							{#if currentLocale === lang}
-								<svg class="w-3 h-3 ml-auto" fill="currentColor" viewBox="0 0 20 20">
-									<path
-										fill-rule="evenodd"
-										d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-										clip-rule="evenodd"
-									></path>
-								</svg>
+								<Check class="w-3 h-3 ml-auto" />
 							{/if}
 						</button>
 					{/each}
