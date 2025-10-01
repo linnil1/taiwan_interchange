@@ -66,7 +66,14 @@ The system operates with a simple architecture:
    npm install
    ```
 
-3. Start the development server:
+3. (Optional) Configure Google Maps API key:
+
+   Open `/frontend/.env` and add your Google Map API key:
+   ```bash
+   PUBLIC_GOOGLE_MAPS_API_KEY=your_actual_google_maps_api_key_here
+   ```
+
+4. Start the development server:
    ```bash
    npm run dev
    ```
@@ -77,7 +84,17 @@ The frontend always reads data from `/interchanges.json` (static asset) in both 
 ## Production Deployment
 
 ### Deploy to Cloudflare
-1. Build and deploy:
+
+1. (Optional) Configure Google Maps API key for production:
+
+   Add the key to `frontend/wrangler.jsonc` under the `vars` section:
+   ```jsonc
+   "vars": {
+     "PUBLIC_GOOGLE_MAPS_API_KEY": "your_api_key_here"
+   }
+   ```
+
+2. Build and deploy:
    ```bash
    cd frontend
    npm run deploy

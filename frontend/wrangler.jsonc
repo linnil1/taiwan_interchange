@@ -13,5 +13,8 @@
 			"pattern": "taiwan-interchanges.linnil1.me",
 			"custom_domain": true
 		}
-	]
+	],
+	"vars": {
+		"PUBLIC_GOOGLE_MAPS_API_KEY": ""
+	}
 }
