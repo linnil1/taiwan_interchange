@@ -12,7 +12,7 @@ from typing import NewType
 
 from models import Ramp, Relation, RelationType, RoadType
 from osm import OverPassNode, OverPassRelation, OverPassResponse, OverPassWay
-from osm_operations import extract_to_destination
+from osm_operations import extract_to_destination, process_relations_mapping
 from utils import calculate_distance
 
 # Distinct map types to differentiate node-based and way-based relation mappings
@@ -298,3 +298,27 @@ def extract_wikidata_ids_from_nodes(
                 relation_type=RelationType.NODE,
             )
     return NodeRelationMap(node_to_relation)
+
+
+def build_exit_relation(response: OverPassResponse, road_type: RoadType) -> NodeRelationMap:
+    """Build node->relation mapping for exits/roads from a single Overpass response.
+
+    Takes an OverPassResponse and returns a NodeRelationMap of node_id -> Relation(name, road_type)
+    based on relation membership.
+    """
+    rel_tuples = process_relations_mapping(response)
+    return wrap_relation_to_node_relation(rel_tuples, road_type)
+
+
+def add_manual_junction_names(node_dict: dict[int, str]) -> NodeRelationMap:
+    """Add manual motorway_junction names for specific nodes not present in OSM data."""
+
+    junction_node_rel: dict[int, Relation] = {}
+    for id, name in node_dict.items():
+        junction_node_rel[id] = Relation(
+            id=id,
+            name=name,
+            road_type=RoadType.JUNCTION,
+            relation_type=RelationType.RELATION,
+        )
+    return NodeRelationMap(junction_node_rel)
